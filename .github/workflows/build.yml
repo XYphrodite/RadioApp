@@ -27,7 +27,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Java 17 (for Android SDK & APK signing)
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: microsoft
           java-version: "17"
@@ -60,6 +60,7 @@ jobs:
       - name: Publish RadioApp.Maui (Windows x64 Unpackaged)
         run: |
           dotnet publish src/RadioApp.Maui/RadioApp.Maui.csproj `
+            -p:OnlyTarget=net10.0-windows10.0.19041.0 `
             -f net10.0-windows10.0.19041.0 `
             -c Release `
             -r win-x64 `
@@ -88,6 +89,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "keytool failed" }
 
           dotnet publish src/RadioApp.Maui/RadioApp.Maui.csproj `
+            -p:OnlyTarget=net10.0-android `
             -f net10.0-android `
             -c Release `
             -p:AndroidPackageFormat=apk `

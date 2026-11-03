@@ -1,8 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk.Razor">
 
     <PropertyGroup>
-        <TargetFrameworks>net10.0-android</TargetFrameworks>
-        <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('windows'))">$(TargetFrameworks);net10.0-windows10.0.19041.0</TargetFrameworks>
+        <TargetFrameworks Condition="'$(OnlyTarget)' == ''">net10.0-android</TargetFrameworks>
+        <TargetFrameworks Condition="'$(OnlyTarget)' == '' and $([MSBuild]::IsOSPlatform('windows'))">$(TargetFrameworks);net10.0-windows10.0.19041.0</TargetFrameworks>
+        <TargetFrameworks Condition="'$(OnlyTarget)' != ''">$(OnlyTarget)</TargetFrameworks>
 
         <OutputType>Exe</OutputType>
         <RootNamespace>RadioApp.Maui</RootNamespace>
