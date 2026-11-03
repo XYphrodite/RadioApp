@@ -1,0 +1,1504 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RadioWork // FM — Прямой эфир</title>
+  <link rel="icon" href="data:," />
+  <style>
+    :root {
+      --bg-0: #07080c;
+      --bg-1: #0e1118;
+      --bg-2: #151924;
+      --bg-card: rgba(20, 24, 35, 0.78);
+      --border: rgba(255, 255, 255, 0.08);
+      --border-hi: rgba(255, 255, 255, 0.16);
+      --text-0: #f3f5fa;
+      --text-1: #a5aec4;
+      --text-2: #667089;
+      --accent: #ff2a85;
+      --accent-2: #00f0ff;
+      --accent-glow: rgba(255, 42, 133, 0.35);
+      --mono: "JetBrains Mono", "Cascadia Mono", "Consolas", monospace;
+      --sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg-0);
+      color: var(--text-0);
+      font-family: var(--sans);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .ambient-bg {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(circle at 22% 28%, var(--accent-glow), transparent 48%),
+        radial-gradient(circle at 82% 78%, rgba(0, 240, 255, 0.08), transparent 50%),
+        linear-gradient(180deg, #090b11 0%, #06070b 100%);
+      transition: background 0.6s ease;
+    }
+
+    .scanlines {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      background: repeating-linear-gradient(
+        to bottom,
+        rgba(255, 255, 255, 0.012) 0px,
+        rgba(255, 255, 255, 0.012) 1px,
+        transparent 1px,
+        transparent 3px
+      );
+    }
+
+    .app-shell {
+      position: relative;
+      z-index: 2;
+      display: grid;
+      grid-template-rows: 54px 1fr;
+      height: 100vh;
+      max-width: 1680px;
+      margin: 0 auto;
+      padding: 12px 18px 16px;
+      gap: 12px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      backdrop-filter: blur(18px);
+    }
+
+    .brand { display: flex; align-items: center; gap: 12px; }
+
+    .live-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #19f086;
+      box-shadow: 0 0 10px #19f086;
+      animation: pulse 2s infinite;
+    }
+
+    .live-dot.muted { background: #ff9f1c; box-shadow: 0 0 8px #ff9f1c; animation: none; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.45; transform: scale(0.88); }
+    }
+
+    .brand-title {
+      font-family: var(--mono);
+      font-weight: 700;
+      font-size: 14px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .brand-sub {
+      font-size: 12px;
+      color: var(--text-2);
+      padding-left: 10px;
+      border-left: 1px solid var(--border);
+    }
+
+    .topbar-right { display: flex; align-items: center; gap: 10px; }
+
+    .stat-pill {
+      font-family: var(--mono);
+      font-size: 11.5px;
+      color: var(--text-1);
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      padding: 5px 10px;
+      border-radius: 8px;
+    }
+
+    .btn-ghost {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-family: var(--sans);
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text-0);
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-hi);
+      padding: 6px 12px;
+      border-radius: 9px;
+      cursor: pointer;
+      transition: all 0.18s ease;
+    }
+
+    .btn-ghost:hover { background: rgba(255, 255, 255, 0.11); border-color: var(--accent); }
+
+    .kbd {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      color: var(--text-1);
+      background: rgba(0, 0, 0, 0.45);
+      border: 1px solid var(--border);
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+
+    .workspace { display: grid; grid-template-columns: 1fr 400px; gap: 14px; min-height: 0; }
+    .receiver-col { display: grid; grid-template-rows: auto 1fr auto auto; gap: 12px; min-height: 0; }
+
+    .tuner-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 14px 20px 16px;
+      backdrop-filter: blur(18px);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .tuner-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-2);
+      letter-spacing: 0.08em;
+    }
+
+    .tuner-scale {
+      position: relative;
+      height: 54px;
+      background: linear-gradient(180deg, rgba(6, 8, 13, 0.9), rgba(14, 17, 26, 0.9));
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: 10px;
+      cursor: ew-resize;
+      overflow: hidden;
+      touch-action: none;
+    }
+
+    .tuner-ticks { position: absolute; inset: 0; }
+    .tick { position: absolute; bottom: 0; width: 1px; background: rgba(255, 255, 255, 0.14); }
+    .tick.major { height: 20px; background: rgba(255, 255, 255, 0.3); }
+    .tick.minor { height: 10px; }
+
+    .tick-label {
+      position: absolute;
+      top: 7px;
+      transform: translateX(-50%);
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--text-2);
+      pointer-events: none;
+    }
+
+    .station-pip {
+      position: absolute;
+      bottom: 0;
+      width: 6px;
+      height: 28px;
+      transform: translateX(-50%);
+      border-radius: 3px 3px 0 0;
+      cursor: pointer;
+      opacity: 0.65;
+      transition: all 0.2s ease;
+      z-index: 3;
+    }
+
+    .station-pip:hover, .station-pip.active {
+      opacity: 1;
+      height: 38px;
+      filter: drop-shadow(0 0 8px currentColor);
+    }
+
+    .tuner-needle {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: var(--accent);
+      box-shadow: 0 0 12px var(--accent), 0 0 24px var(--accent);
+      transform: translateX(-50%);
+      pointer-events: none;
+      transition: left 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+      z-index: 4;
+    }
+
+    .tuner-needle::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      border-left: 6px solid transparent;
+      border-right: 6px solid transparent;
+      border-top: 7px solid var(--accent);
+    }
+
+    .deck-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 24px 28px;
+      backdrop-filter: blur(20px);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    .deck-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+    .station-freq-row { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+
+    .freq-big {
+      font-family: var(--mono);
+      font-size: 44px;
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: -0.03em;
+      color: var(--accent);
+      text-shadow: 0 0 28px var(--accent-glow);
+      transition: color 0.3s ease, text-shadow 0.3s ease;
+    }
+
+    .freq-unit { font-family: var(--mono); font-size: 15px; font-weight: 600; color: var(--text-1); }
+    .station-name-big { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; margin-top: 4px; }
+    .station-format { font-size: 13.5px; color: var(--text-1); margin-top: 2px; }
+
+    .rds-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: 360px; }
+
+    .rds-tag {
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.045);
+      border: 1px solid var(--border);
+      color: var(--text-1);
+    }
+
+    .rds-tag.hi { color: var(--accent); border-color: var(--accent-glow); background: rgba(255, 255, 255, 0.03); }
+
+    .now-playing-stage {
+      display: grid;
+      grid-template-columns: 184px 1fr;
+      gap: 26px;
+      align-items: center;
+      margin: auto 0;
+      padding: 12px 0;
+    }
+
+    .vinyl-wrap {
+      position: relative;
+      width: 184px;
+      height: 184px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .vinyl-disc {
+      width: 176px;
+      height: 176px;
+      border-radius: 50%;
+      background: radial-gradient(circle at center, #0b0d13 0 13%, var(--accent) 13.5% 33%, #141720 34% 36%, #0d0f16 37% 100%);
+      box-shadow: 0 14px 36px rgba(0, 0, 0, 0.65), 0 0 34px var(--accent-glow), inset 0 0 0 2px rgba(255, 255, 255, 0.08);
+      position: relative;
+      animation: spin 11s linear infinite;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .vinyl-disc.paused { animation-play-state: paused; }
+
+    .vinyl-grooves {
+      position: absolute;
+      inset: 12px;
+      border-radius: 50%;
+      border: 1px dashed rgba(255, 255, 255, 0.07);
+      pointer-events: none;
+    }
+
+    .vinyl-grooves::after {
+      content: "";
+      position: absolute;
+      inset: 16px;
+      border-radius: 50%;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .vinyl-cover {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 2px solid var(--accent);
+      box-shadow: 0 0 14px rgba(0, 0, 0, 0.8);
+      z-index: 2;
+      display: none;
+    }
+
+    .vinyl-spindle {
+      position: absolute;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #07080c;
+      border: 1.5px solid rgba(255, 255, 255, 0.35);
+      z-index: 4;
+      display: none;
+    }
+
+    .vinyl-emblem {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      pointer-events: none;
+      text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
+      z-index: 3;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .track-meta { min-width: 0; }
+
+    .on-air-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+
+    .track-title {
+      font-size: 30px;
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .track-artist {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text-0);
+      opacity: 0.9;
+      margin-top: 5px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .track-album {
+      font-size: 13px;
+      color: var(--text-2);
+      margin-top: 4px;
+      font-family: var(--mono);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .broadcast-bar-wrap { margin-top: 18px; }
+
+    .broadcast-times {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      color: var(--text-1);
+      margin-bottom: 6px;
+    }
+
+    .no-scrub-hint { font-size: 10.5px; color: var(--text-2); display: inline-flex; align-items: center; gap: 5px; }
+
+    .broadcast-progress-track {
+      height: 6px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      overflow: hidden;
+      cursor: not-allowed;
+    }
+
+    .broadcast-progress-fill {
+      height: 100%;
+      width: 0%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--accent), #ffffff);
+      box-shadow: 0 0 12px var(--accent);
+      transition: width 0.35s linear;
+    }
+
+    .spectrum-wrap {
+      height: 56px;
+      margin-top: 8px;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+      padding-top: 10px;
+    }
+
+    #spectrumCanvas { width: 100%; height: 46px; display: block; }
+
+    .controls-bar {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 12px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      backdrop-filter: blur(18px);
+      flex-wrap: wrap;
+    }
+
+    .transport-group, .feedback-group, .audio-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+    .btn-power {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      padding: 10px 18px;
+      border-radius: 11px;
+      font-weight: 700;
+      font-size: 13px;
+      letter-spacing: 0.03em;
+      cursor: pointer;
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: #07080c;
+      box-shadow: 0 0 22px var(--accent-glow);
+      transition: all 0.18s ease;
+    }
+
+    .btn-power.off {
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-0);
+      border-color: var(--border-hi);
+      box-shadow: none;
+    }
+
+    .btn-ctrl {
+      padding: 9px 13px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+      color: var(--text-0);
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-ctrl:hover { background: rgba(255, 255, 255, 0.11); border-color: var(--border-hi); }
+    .btn-ctrl.liked { color: #ff4d8d; border-color: rgba(255, 77, 141, 0.5); background: rgba(255, 77, 141, 0.12); }
+
+    .vol-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      color: var(--text-1);
+    }
+
+    input[type="range"].vol-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 96px;
+      height: 5px;
+      border-radius: 99px;
+      background: rgba(255, 255, 255, 0.14);
+      outline: none;
+      cursor: pointer;
+    }
+
+    input[type="range"].vol-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--text-0);
+      border: 2px solid var(--accent);
+      box-shadow: 0 0 8px var(--accent);
+    }
+
+    .history-strip {
+      background: rgba(15, 18, 27, 0.65);
+      border: 1px solid var(--border);
+      border-radius: 13px;
+      padding: 9px 16px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      overflow: hidden;
+      font-size: 12px;
+    }
+
+    .history-label {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-2);
+      white-space: nowrap;
+    }
+
+    .history-items { display: flex; align-items: center; gap: 18px; overflow: hidden; flex: 1; }
+    .history-item { display: flex; align-items: center; gap: 7px; color: var(--text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .history-time { font-family: var(--mono); font-size: 10.5px; color: var(--text-2); }
+
+    .stations-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      backdrop-filter: blur(20px);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .panel-head {
+      padding: 14px 16px 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .panel-title { font-size: 13.5px; font-weight: 700; }
+
+    .sort-tabs {
+      display: flex;
+      gap: 4px;
+      background: rgba(0, 0, 0, 0.35);
+      padding: 3px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+
+    .sort-tab {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      padding: 3px 8px;
+      border-radius: 5px;
+      border: none;
+      background: transparent;
+      color: var(--text-2);
+      cursor: pointer;
+    }
+
+    .sort-tab.active { background: rgba(255, 255, 255, 0.1); color: var(--text-0); }
+
+    .stations-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .stations-list::-webkit-scrollbar { width: 5px; }
+    .stations-list::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 99px; }
+
+    .st-card {
+      position: relative;
+      padding: 9px 12px 11px;
+      border-radius: 11px;
+      background: rgba(255, 255, 255, 0.025);
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all 0.16s ease;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .st-card:hover { background: rgba(255, 255, 255, 0.055); border-color: var(--border-hi); }
+
+    .st-card.active {
+      background: rgba(255, 255, 255, 0.075);
+      border-color: var(--st-color);
+      box-shadow: inset 3px 0 0 var(--st-color);
+    }
+
+    .st-row-1 { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .st-title-wrap { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .st-freq { font-family: var(--mono); font-size: 11.5px; font-weight: 700; color: var(--st-color); min-width: 42px; }
+    .st-name { font-size: 13.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .st-count { font-family: var(--mono); font-size: 10.5px; color: var(--text-2); white-space: nowrap; }
+
+    .st-row-2 {
+      margin-top: 4px;
+      font-size: 11.5px;
+      color: var(--text-1);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      padding-left: 50px;
+    }
+
+    .st-mini-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: rgba(255, 255, 255, 0.04); }
+    .st-mini-fill { height: 100%; background: var(--st-color); opacity: 0.7; transition: width 0.5s linear; }
+
+    .wheel-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      background: rgba(5, 7, 12, 0.82);
+      backdrop-filter: blur(14px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .wheel-backdrop.open { display: flex; }
+    .wheel-container { position: relative; width: 580px; height: 580px; max-width: 94vw; max-height: 94vw; }
+
+    .wheel-center {
+      position: absolute;
+      inset: 165px;
+      border-radius: 50%;
+      background: rgba(15, 19, 29, 0.95);
+      border: 2px solid var(--accent);
+      box-shadow: 0 0 40px var(--accent-glow);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 20px;
+    }
+
+    .wheel-node {
+      position: absolute;
+      width: 96px;
+      height: 96px;
+      margin-left: -48px;
+      margin-top: -48px;
+      border-radius: 50%;
+      background: rgba(20, 25, 38, 0.92);
+      border: 1.5px solid var(--border-hi);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 6px;
+      cursor: pointer;
+      transition: all 0.16s ease;
+    }
+
+    .wheel-node:hover, .wheel-node.active {
+      transform: scale(1.13);
+      border-color: var(--node-color);
+      box-shadow: 0 0 24px var(--node-color);
+      background: rgba(28, 34, 52, 0.98);
+    }
+
+    .wheel-node-icon { font-size: 20px; margin-bottom: 3px; }
+    .wheel-node-freq { font-family: var(--mono); font-size: 10.5px; font-weight: 700; color: var(--node-color); }
+    .wheel-node-name { font-size: 10.5px; font-weight: 700; line-height: 1.15; margin-top: 2px; }
+
+    .tuning-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0;
+      background: repeating-radial-gradient(circle at 50% 50%, rgba(255,255,255,0.06) 0 1px, transparent 1px 3px);
+      transition: opacity 0.14s ease;
+      z-index: 5;
+    }
+    .tuning-overlay.flash { opacity: 1; }
+
+    @media (max-width: 1060px) {
+      html, body { overflow: auto; }
+      .app-shell { height: auto; min-height: 100vh; }
+      .workspace { grid-template-columns: 1fr; }
+      .stations-panel { max-height: 440px; }
+      .brand-sub { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="ambient-bg"></div>
+  <div class="scanlines"></div>
+
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <span class="live-dot muted" id="liveDot"></span>
+        <span class="brand-title">RadioWork // FM</span>
+        <span class="brand-sub">Прямой эфир · локальная фонотека mks68i7rtx</span>
+      </div>
+      <div class="topbar-right">
+        <span class="stat-pill" id="statsPill">Загрузка фонотеки...</span>
+        <span class="stat-pill" id="clockPill">--:--:--</span>
+        <button class="btn-ghost" id="btnOpenWheel" title="Круговое меню выбора волны [Q]">
+          ◎ Колесо станций <span class="kbd">Q</span>
+        </button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="receiver-col">
+        <div class="tuner-box">
+          <div class="tuner-header">
+            <span>FM BAND 87.5 — 108.0 MHz · ПОТЯНИ ШКАЛУ ИЛИ КРУТИ КОЛЕСО МЫШИ</span>
+            <span>SIGNAL 99% · STEREO RDS</span>
+          </div>
+          <div class="tuner-scale" id="tunerScale">
+            <div class="tuner-ticks" id="tunerTicks"></div>
+            <div class="tuner-needle" id="tunerNeedle"></div>
+          </div>
+        </div>
+
+        <div class="deck-card">
+          <div class="tuning-overlay" id="tuningFlash"></div>
+
+          <div class="deck-top">
+            <div>
+              <div class="station-freq-row">
+                <span class="freq-big" id="uiFreq">104.5</span>
+                <span class="freq-unit">MHz FM</span>
+              </div>
+              <div class="station-name-big" id="uiStationName">Nightdrive FM</div>
+              <div class="station-format" id="uiStationFormat">synthwave / electronic / night drive</div>
+            </div>
+
+            <div class="rds-badges">
+              <span class="rds-tag hi" id="uiGenre">Electronic</span>
+              <span class="rds-tag" id="uiCodec">FLAC LOSSLESS</span>
+              <span class="rds-tag" id="uiBpm">120 BPM</span>
+              <span class="rds-tag" id="uiEnergy">ENERGY 80%</span>
+            </div>
+          </div>
+
+          <div class="now-playing-stage">
+            <div class="vinyl-wrap">
+              <div class="vinyl-disc paused" id="vinylDisc">
+                <div class="vinyl-grooves"></div>
+                <img class="vinyl-cover" id="vinylCover" alt="" />
+                <div class="vinyl-spindle" id="vinylSpindle"></div>
+              </div>
+              <div class="vinyl-emblem" id="vinylIcon">🌃</div>
+            </div>
+
+            <div class="track-meta">
+              <div class="on-air-eyebrow">
+                <span>● СЕЙЧАС В ЭФИРЕ</span>
+                <span id="uiStationCount"></span>
+              </div>
+              <div class="track-title" id="uiTrackTitle">Подключение к эфиру...</div>
+              <div class="track-artist" id="uiTrackArtist">—</div>
+              <div class="track-album" id="uiTrackAlbum"></div>
+
+              <div class="broadcast-bar-wrap">
+                <div class="broadcast-times">
+                  <span id="uiElapsed">00:00</span>
+                  <span class="no-scrub-hint">🔒 Прямой эфир — перемотка отключена</span>
+                  <span id="uiDuration">00:00</span>
+                </div>
+                <div class="broadcast-progress-track">
+                  <div class="broadcast-progress-fill" id="uiProgressFill"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="spectrum-wrap">
+            <canvas id="spectrumCanvas" width="900" height="46"></canvas>
+          </div>
+        </div>
+
+        <div class="controls-bar">
+          <div class="transport-group">
+            <button class="btn-power off" id="btnPower" title="Включить / приглушить приёмник [Space]">
+              ⏻ <span id="powerLabel">ВКЛЮЧИТЬ ЗВУК</span>
+            </button>
+            <button class="btn-ctrl" id="btnPrevSt">⏮ Волна −</button>
+            <button class="btn-ctrl" id="btnNextSt">Волна + ⏭</button>
+            <button class="btn-ctrl" id="btnNextTrack">⚡ Помехи (след.)</button>
+          </div>
+
+          <div class="feedback-group">
+            <button class="btn-ctrl" id="btnLike">♥ Чаще в эфире</button>
+            <button class="btn-ctrl" id="btnBan">✕ В бан</button>
+          </div>
+
+          <div class="audio-group">
+            <button class="btn-ctrl" id="btnStaticToggle">📻 Шум: ВКЛ</button>
+            <div class="vol-wrap">
+              <span>🔊</span>
+              <input type="range" class="vol-slider" id="volSlider" min="0" max="100" value="75" />
+              <span id="volVal">75%</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="history-strip">
+          <span class="history-label">Недавно на волне:</span>
+          <div class="history-items" id="uiHistory"></div>
+        </div>
+      </section>
+
+      <aside class="stations-panel">
+        <div class="panel-head">
+          <span class="panel-title">Все 11 станций (живой эфир)</span>
+          <div class="sort-tabs">
+            <button class="sort-tab active" data-sort="count">По базе</button>
+            <button class="sort-tab" data-sort="freq">По MHz</button>
+          </div>
+        </div>
+        <div class="stations-list" id="stationsList"></div>
+      </aside>
+    </main>
+  </div>
+
+  <div class="wheel-backdrop" id="wheelBackdrop">
+    <div class="wheel-container" id="wheelContainer">
+      <div class="wheel-center">
+        <div style="font-family: var(--mono); font-size: 13px; color: var(--accent);" id="whFreq">104.5 FM</div>
+        <div style="font-size: 20px; font-weight: 800; margin-top: 3px;" id="whName">Nightdrive FM</div>
+        <div style="font-size: 12px; color: var(--text-1); margin-top: 8px;" id="whTrack"></div>
+        <div style="font-family: var(--mono); font-size: 10.5px; color: var(--text-2); margin-top: 12px;">Кликни сектор или Esc</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const THEMES = {
+      "Nightdrive FM": { freq: 104.5, icon: "🌃", color: "#ff2a85" },
+      "Westside FM":   { freq: 88.7,  icon: "🌴", color: "#19e68c" },
+      "Velvet 98.3":   { freq: 98.3,  icon: "🎷", color: "#f4b961" },
+      "Thunder Rock":  { freq: 92.5,  icon: "⚡", color: "#ff5c33" },
+      "Drift FM":      { freq: 89.1,  icon: "🏎️", color: "#b44cff" },
+      "Golden Era FM": { freq: 90.3,  icon: "📼", color: "#ffd166" },
+      "Static Radio":  { freq: 96.1,  icon: "🎸", color: "#9ef01a" },
+      "Island Radio":  { freq: 91.2,  icon: "🏝️", color: "#00d4b2" },
+      "Funk Zone":     { freq: 99.4,  icon: "🪩", color: "#ff70a6" },
+      "Country Trail": { freq: 87.9,  icon: "🤠", color: "#e08e45" },
+      "Soul Wave":     { freq: 103.9, icon: "💜", color: "#c77dff" }
+    };
+
+    const FREQ_MIN = 87.5, FREQ_MAX = 108.0;
+    const saved = JSON.parse(localStorage.getItem("radiowork_web_state") || "{}");
+
+    const state = {
+      stations: [],
+      activeName: saved.activeName || "Nightdrive FM",
+      powerOn: false, // Browsers require 1 click to start audio cleanly
+      staticFx: saved.staticFx ?? true,
+      volume: saved.volume ?? 0.75,
+      sortMode: saved.sortMode || "count",
+      likedIds: new Set(saved.likedIds || []),
+      bannedIds: new Set(saved.bannedIds || []),
+      skipOffsets: saved.skipOffsets || {},
+      failedDirectIds: new Set()
+    };
+
+    function persist() {
+      localStorage.setItem("radiowork_web_state", JSON.stringify({
+        activeName: state.activeName,
+        staticFx: state.staticFx,
+        volume: state.volume,
+        sortMode: state.sortMode,
+        likedIds: [...state.likedIds],
+        bannedIds: [...state.bannedIds],
+        skipOffsets: state.skipOffsets
+      }));
+    }
+
+    function cleanTitle(filename, artist) {
+      if (!filename) return "Unknown Track";
+      let stem = filename.replace(/\.[^/.]+$/, "").replace(/_/g, " ").trim();
+      stem = stem.replace(/^(?:(?:cd|disc)\s*\d+\s*[-.]?\s*)?(?:\d{1,2}-)?\d{1,3}(?:\s*[.-]\s*|\s+)/i, "").trim();
+      const dash = stem.indexOf(" - ");
+      if (dash > 0 && artist) {
+        const na = artist.replace(/_/g, " ").trim().toLowerCase();
+        const pref = stem.slice(0, dash).trim().toLowerCase();
+        if (pref.startsWith(na) || na.startsWith(pref)) {
+          stem = stem.slice(dash + 3).trim();
+        }
+      }
+      stem = stem.replace(/\s*[\(\[](?:skysound\.cc|zaycev\.net|muzofon\.[a-z]+|mp3party\.[a-z]+|promodj\.com)[\)\]]\s*$/i, "").trim();
+      return stem || filename;
+    }
+
+    function codecBadge(filename, album = "") {
+      if (/\[24-|24\/96/i.test(album)) return "FLAC 24/96";
+      if (/\[ALAC\]/i.test(album)) return "ALAC LOSSLESS";
+      const ext = (filename.split(".").pop() || "").toLowerCase();
+      return { flac: "FLAC LOSSLESS", m4a: "AAC / M4A", ogg: "OGG VORBIS", wav: "WAV PCM", mp3: "MP3" }[ext] || ext.toUpperCase();
+    }
+
+    function fnvHash(str) {
+      let h = 2166136261 >>> 0;
+      for (let i = 0; i < str.length; i++) {
+        h ^= str.toLowerCase().charCodeAt(i);
+        h = Math.imul(h, 16777619) >>> 0;
+      }
+      return h >>> 0;
+    }
+
+    function buildSchedule(st) {
+      let pool = st.rawTracks.filter(t => !state.bannedIds.has(t.id));
+      if (!pool.length) pool = st.rawTracks.slice();
+      pool.sort((a, b) => a.id - b.id);
+
+      // Deterministic shuffle
+      let seed = (fnvHash(st.name) ^ 0x9e3779b9) >>> 0;
+      for (let i = pool.length - 1; i > 0; i--) {
+        seed = (Math.imul(seed ^ (seed >>> 15), 2246822519) ^ 0x85ebca6b) >>> 0;
+        const j = seed % (i + 1);
+        [pool[i], pool[j]] = [pool[j], pool[i]];
+      }
+
+      const liked = pool.filter(t => state.likedIds.has(t.id));
+      if (liked.length > 0 && pool.length >= 4) {
+        const stride = Math.max(2, Math.floor(pool.length / (liked.length + 1)));
+        let pos = Math.floor(stride / 2);
+        for (const lt of liked) {
+          pool.splice(Math.min(pos, pool.length), 0, lt);
+          pos = (pos + stride + 1) % (pool.length + 1);
+        }
+      }
+
+      const cum = new Float64Array(pool.length);
+      let sum = 0;
+      for (let i = 0; i < pool.length; i++) {
+        sum += pool[i].dur;
+        cum[i] = sum;
+      }
+      st.slots = pool;
+      st.cum = cum;
+      st.totalCycle = Math.max(1, sum);
+    }
+
+    function locateLive(st, nowSec) {
+      const off = state.skipOffsets[st.name] || 0;
+      let pos = (nowSec + st.phase + off) % st.totalCycle;
+      if (pos < 0) pos += st.totalCycle;
+
+      let lo = 0, hi = st.cum.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (st.cum[mid] <= pos) lo = mid + 1;
+        else hi = mid;
+      }
+      const start = lo === 0 ? 0 : st.cum[lo - 1];
+      const tr = st.slots[lo];
+      const elapsed = Math.max(0, Math.min(tr.dur, pos - start));
+
+      const history = [];
+      let back = elapsed;
+      for (let h = 1; h <= Math.min(2, st.slots.length - 1); h++) {
+        const prev = st.slots[(lo - h + st.slots.length) % st.slots.length];
+        history.push({ track: prev, minsAgo: Math.max(1, Math.round(back / 60)) });
+        back += prev.dur;
+      }
+      return { track: tr, slotIdx: lo, elapsed, history };
+    }
+
+    // Audio + Web Audio Spectrum + Squelch
+    const audio = new Audio();
+    audio.crossOrigin = "anonymous";
+    audio.preload = "auto";
+
+    let audioCtx = null, analyser = null, freqBins = null, sourceAttached = false;
+    let syncedTrackId = -1, syncedStation = "", syncedTranscode = false, baseOffsetSec = 0, coverTrackId = -1;
+
+    function ensureAudioGraph() {
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === "suspended") audioCtx.resume();
+        if (audioCtx.state === "running" && !sourceAttached) {
+          analyser = audioCtx.createAnalyser();
+          analyser.fftSize = 256;
+          analyser.smoothingTimeConstant = 0.78;
+          freqBins = new Uint8Array(analyser.frequencyBinCount);
+          const src = audioCtx.createMediaElementSource(audio);
+          src.connect(analyser);
+          analyser.connect(audioCtx.destination);
+          sourceAttached = true;
+        }
+      } catch (_) {}
+    }
+
+    function playStaticBurst(sec = 0.16) {
+      if (!state.staticFx || !state.powerOn) return;
+      try {
+        ensureAudioGraph();
+        const len = Math.floor(audioCtx.sampleRate * sec);
+        const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.sin((i / len) * Math.PI) * 0.22 * state.volume;
+        const n = audioCtx.createBufferSource();
+        n.buffer = buf;
+        const f = audioCtx.createBiquadFilter();
+        f.type = "bandpass";
+        f.frequency.value = 1900;
+        f.Q.value = 0.9;
+        n.connect(f);
+        f.connect(audioCtx.destination);
+        n.start();
+      } catch (_) {}
+    }
+
+    audio.addEventListener("error", () => {
+      if (syncedTrackId >= 0 && !syncedTranscode) {
+        state.failedDirectIds.add(syncedTrackId);
+        syncedTranscode = true;
+        audio.src = `/api/stream/${syncedTrackId}?transcode=1&ss=${baseOffsetSec.toFixed(2)}`;
+        if (state.powerOn) audio.play().catch(() => {});
+      }
+    });
+
+    audio.addEventListener("ended", () => syncAudio(true));
+
+    function syncAudio(force = false) {
+      const st = state.stations.find(s => s.name === state.activeName);
+      if (!st) return;
+      const lv = locateLive(st, Date.now() / 1000);
+      const tr = lv.track;
+
+      audio.volume = state.volume;
+      audio.muted = !state.powerOn;
+      if (!state.powerOn) return;
+
+      ensureAudioGraph();
+      const needTranscode = tr.isAlac || state.failedDirectIds.has(tr.id);
+      const changed = force || tr.id !== syncedTrackId || st.name !== syncedStation || needTranscode !== syncedTranscode;
+
+      if (changed) {
+        syncedTrackId = tr.id;
+        syncedStation = st.name;
+        syncedTranscode = needTranscode;
+        if (needTranscode) {
+          baseOffsetSec = lv.elapsed;
+          audio.src = `/api/stream/${tr.id}?transcode=1&ss=${lv.elapsed.toFixed(2)}`;
+        } else {
+          baseOffsetSec = 0;
+          audio.src = `/api/stream/${tr.id}`;
+          const onMeta = () => {
+            audio.removeEventListener("loadedmetadata", onMeta);
+            try { audio.currentTime = lv.elapsed; } catch (_) {}
+          };
+          audio.addEventListener("loadedmetadata", onMeta);
+        }
+        audio.play().catch(() => {});
+      } else if (!needTranscode && audio.readyState >= 1 && Math.abs((audio.currentTime || 0) - lv.elapsed) > 2.5) {
+        try { audio.currentTime = lv.elapsed; } catch (_) {}
+      }
+    }
+
+    function fmtTime(sec) {
+      const s = Math.max(0, Math.floor(sec));
+      return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+    }
+
+    function freqToPct(f) { return ((f - FREQ_MIN) / (FREQ_MAX - FREQ_MIN)) * 100; }
+
+    function buildTuner() {
+      const el = document.getElementById("tunerTicks");
+      el.innerHTML = "";
+      for (let f = 88; f <= 108; f += 0.5) {
+        const major = Number.isInteger(f) && f % 2 === 0;
+        const t = document.createElement("div");
+        t.className = "tick " + (major ? "major" : "minor");
+        t.style.left = freqToPct(f) + "%";
+        el.appendChild(t);
+        if (major) {
+          const l = document.createElement("div");
+          l.className = "tick-label";
+          l.style.left = freqToPct(f) + "%";
+          l.textContent = f;
+          el.appendChild(l);
+        }
+      }
+      state.stations.forEach(st => {
+        const pip = document.createElement("div");
+        pip.className = "station-pip";
+        pip.dataset.name = st.name;
+        pip.style.left = freqToPct(st.freq) + "%";
+        pip.style.background = st.color;
+        pip.style.color = st.color;
+        pip.title = `${st.freq.toFixed(1)} FM — ${st.name}`;
+        pip.addEventListener("click", e => { e.stopPropagation(); tuneStation(st.name); });
+        el.appendChild(pip);
+      });
+    }
+
+    function tuneStation(name) {
+      if (name === state.activeName) return;
+      state.activeName = name;
+      persist();
+      playStaticBurst(0.16);
+      const fl = document.getElementById("tuningFlash");
+      fl.classList.add("flash");
+      setTimeout(() => fl.classList.remove("flash"), 150);
+      syncAudio(true);
+      render();
+    }
+
+    function stepFrequency(dir) {
+      if (!state.stations.length) return;
+      const sorted = state.stations.slice().sort((a, b) => a.freq - b.freq);
+      const idx = Math.max(0, sorted.findIndex(s => s.name === state.activeName));
+      tuneStation(sorted[(idx + dir + sorted.length) % sorted.length].name);
+    }
+
+    function render() {
+      if (!state.stations.length) return;
+      const nowSec = Date.now() / 1000;
+      const st = state.stations.find(s => s.name === state.activeName) || state.stations[0];
+      const lv = locateLive(st, nowSec);
+      const tr = lv.track;
+
+      document.documentElement.style.setProperty("--accent", st.color);
+      document.documentElement.style.setProperty("--accent-glow", st.color + "52");
+
+      document.getElementById("tunerNeedle").style.left = freqToPct(st.freq) + "%";
+      document.querySelectorAll(".station-pip").forEach(p => p.classList.toggle("active", p.dataset.name === st.name));
+
+      document.getElementById("uiFreq").textContent = st.freq.toFixed(1);
+      document.getElementById("uiStationName").textContent = st.name;
+      document.getElementById("uiStationFormat").textContent = st.format;
+      document.getElementById("uiStationCount").textContent = `· ${st.rawTracks.length.toLocaleString("ru-RU")} треков в ротации`;
+      document.getElementById("vinylIcon").textContent = st.icon;
+
+      if (tr.id !== coverTrackId) {
+        coverTrackId = tr.id;
+        const img = document.getElementById("vinylCover");
+        const sp = document.getElementById("vinylSpindle");
+        const ic = document.getElementById("vinylIcon");
+        img.style.display = "none";
+        sp.style.display = "none";
+        ic.style.display = "flex";
+        img.onload = () => { img.style.display = "block"; sp.style.display = "block"; ic.style.display = "none"; };
+        img.onerror = () => { img.style.display = "none"; sp.style.display = "none"; ic.style.display = "flex"; };
+        img.src = `/api/cover/${tr.id}`;
+      }
+
+      document.getElementById("uiGenre").textContent = tr.genre || st.format;
+      document.getElementById("uiCodec").textContent = tr.codec;
+      document.getElementById("uiBpm").textContent = `${tr.bpm} BPM`;
+      document.getElementById("uiEnergy").textContent = `ENERGY ${tr.energy}%`;
+
+      document.getElementById("uiTrackTitle").textContent = tr.title;
+      document.getElementById("uiTrackArtist").textContent = tr.artist;
+      document.getElementById("uiTrackAlbum").textContent = tr.album;
+
+      document.getElementById("uiElapsed").textContent = fmtTime(lv.elapsed);
+      document.getElementById("uiDuration").textContent = fmtTime(tr.dur);
+      document.getElementById("uiProgressFill").style.width = ((lv.elapsed / tr.dur) * 100).toFixed(1) + "%";
+
+      document.getElementById("btnLike").classList.toggle("liked", state.likedIds.has(tr.id));
+
+      document.getElementById("uiHistory").innerHTML = lv.history
+        .map(h => `<div class="history-item"><span class="history-time">${h.minsAgo} мин назад</span> <strong>${h.track.artist}</strong> — ${h.track.title}</div>`)
+        .join("");
+
+      const ordered = state.stations.slice().sort((a, b) =>
+        state.sortMode === "freq" ? a.freq - b.freq : b.rawTracks.length - a.rawTracks.length);
+
+      const listEl = document.getElementById("stationsList");
+      listEl.innerHTML = ordered.map(s => {
+        const slv = locateLive(s, nowSec);
+        const pct = ((slv.elapsed / slv.track.dur) * 100).toFixed(1);
+        return `
+          <div class="st-card ${s.name === st.name ? "active" : ""}" style="--st-color: ${s.color}" data-name="${s.name}">
+            <div class="st-row-1">
+              <div class="st-title-wrap">
+                <span class="st-freq">${s.freq.toFixed(1)}</span>
+                <span class="st-name">${s.icon} ${s.name}</span>
+              </div>
+              <span class="st-count">${s.rawTracks.length.toLocaleString("ru-RU")} тр.</span>
+            </div>
+            <div class="st-row-2">▶ ${slv.track.artist} — ${slv.track.title}</div>
+            <div class="st-mini-bar"><div class="st-mini-fill" style="width:${pct}%"></div></div>
+          </div>`;
+      }).join("");
+
+      listEl.querySelectorAll(".st-card").forEach(c => c.addEventListener("click", () => tuneStation(c.dataset.name)));
+
+      document.getElementById("whFreq").textContent = `${st.freq.toFixed(1)} FM`;
+      document.getElementById("whFreq").style.color = st.color;
+      document.getElementById("whName").textContent = st.name;
+      document.getElementById("whTrack").textContent = `${tr.artist} — ${tr.title}`;
+    }
+
+    // Controls
+    document.getElementById("btnPower").addEventListener("click", () => {
+      state.powerOn = !state.powerOn;
+      document.getElementById("btnPower").classList.toggle("off", !state.powerOn);
+      document.getElementById("powerLabel").textContent = state.powerOn ? "В ЭФИРЕ" : "MUTE (ЭФИР ИДЁТ)";
+      document.getElementById("vinylDisc").classList.toggle("paused", !state.powerOn);
+      document.getElementById("liveDot").classList.toggle("muted", !state.powerOn);
+      if (state.powerOn) syncAudio(true);
+      else audio.muted = true;
+    });
+
+    document.getElementById("btnPrevSt").addEventListener("click", () => stepFrequency(-1));
+    document.getElementById("btnNextSt").addEventListener("click", () => stepFrequency(1));
+
+    document.getElementById("btnNextTrack").addEventListener("click", () => {
+      const st = state.stations.find(s => s.name === state.activeName);
+      if (!st) return;
+      const lv = locateLive(st, Date.now() / 1000);
+      const rem = Math.max(0.1, lv.track.dur - lv.elapsed + 0.1);
+      state.skipOffsets[st.name] = ((state.skipOffsets[st.name] || 0) + rem) % st.totalCycle;
+      persist();
+      playStaticBurst(0.22);
+      syncAudio(true);
+      render();
+    });
+
+    document.getElementById("btnLike").addEventListener("click", () => {
+      const st = state.stations.find(s => s.name === state.activeName);
+      if (!st) return;
+      const nowSec = Date.now() / 1000;
+      const before = locateLive(st, nowSec);
+      if (state.likedIds.has(before.track.id)) state.likedIds.delete(before.track.id);
+      else state.likedIds.add(before.track.id);
+      buildSchedule(st);
+      const newIdx = st.slots.findIndex(t => t.id === before.track.id);
+      if (newIdx >= 0) {
+        const start = newIdx === 0 ? 0 : st.cum[newIdx - 1];
+        state.skipOffsets[st.name] = ((start + before.elapsed - (nowSec + st.phase)) % st.totalCycle + st.totalCycle) % st.totalCycle;
+      }
+      persist();
+      render();
+    });
+
+    document.getElementById("btnBan").addEventListener("click", () => {
+      const st = state.stations.find(s => s.name === state.activeName);
+      if (!st) return;
+      const nowSec = Date.now() / 1000;
+      const before = locateLive(st, nowSec);
+      state.bannedIds.add(before.track.id);
+      buildSchedule(st);
+      persist();
+      playStaticBurst(0.22);
+      syncAudio(true);
+      render();
+    });
+
+    document.getElementById("btnStaticToggle").addEventListener("click", e => {
+      state.staticFx = !state.staticFx;
+      e.currentTarget.textContent = state.staticFx ? "📻 Шум: ВКЛ" : "📻 Шум: ВЫКЛ";
+      persist();
+    });
+    document.getElementById("btnStaticToggle").textContent = state.staticFx ? "📻 Шум: ВКЛ" : "📻 Шум: ВЫКЛ";
+
+    const volSlider = document.getElementById("volSlider");
+    volSlider.value = Math.round(state.volume * 100);
+    document.getElementById("volVal").textContent = `${volSlider.value}%`;
+    volSlider.addEventListener("input", e => {
+      state.volume = Number(e.target.value) / 100;
+      audio.volume = state.volume;
+      document.getElementById("volVal").textContent = `${e.target.value}%`;
+      persist();
+    });
+
+    document.querySelectorAll(".sort-tab").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.sort === state.sortMode);
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".sort-tab").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        state.sortMode = btn.dataset.sort;
+        persist();
+        render();
+      });
+    });
+
+    // Tuner drag & wheel
+    const scale = document.getElementById("tunerScale");
+    let dragging = false;
+    function dragAt(clientX) {
+      if (!state.stations.length) return;
+      const r = scale.getBoundingClientRect();
+      const target = FREQ_MIN + Math.min(1, Math.max(0, (clientX - r.left) / r.width)) * (FREQ_MAX - FREQ_MIN);
+      let best = state.stations[0], diff = Infinity;
+      state.stations.forEach(s => { const d = Math.abs(s.freq - target); if (d < diff) { diff = d; best = s; } });
+      tuneStation(best.name);
+    }
+    scale.addEventListener("pointerdown", e => { dragging = true; scale.setPointerCapture(e.pointerId); dragAt(e.clientX); });
+    scale.addEventListener("pointermove", e => { if (dragging) dragAt(e.clientX); });
+    scale.addEventListener("pointerup", () => { dragging = false; });
+    scale.addEventListener("wheel", e => { e.preventDefault(); stepFrequency(e.deltaY > 0 ? 1 : -1); }, { passive: false });
+
+    // Station Wheel
+    function toggleWheel(force) {
+      const bd = document.getElementById("wheelBackdrop");
+      const open = typeof force === "boolean" ? force : !bd.classList.contains("open");
+      if (open) {
+        const cont = document.getElementById("wheelContainer");
+        cont.querySelectorAll(".wheel-node").forEach(n => n.remove());
+        const nowSec = Date.now() / 1000;
+        state.stations.forEach((s, idx) => {
+          const ang = (idx / state.stations.length) * Math.PI * 2 - Math.PI / 2;
+          const node = document.createElement("div");
+          node.className = "wheel-node" + (s.name === state.activeName ? " active" : "");
+          node.style.left = (290 + Math.cos(ang) * 228) + "px";
+          node.style.top = (290 + Math.sin(ang) * 228) + "px";
+          node.style.setProperty("--node-color", s.color);
+          node.innerHTML = `<div class="wheel-node-icon">${s.icon}</div><div class="wheel-node-freq">${s.freq.toFixed(1)}</div><div class="wheel-node-name">${s.name}</div>`;
+          node.addEventListener("mouseenter", () => {
+            const lv = locateLive(s, nowSec);
+            document.getElementById("whFreq").textContent = `${s.freq.toFixed(1)} FM`;
+            document.getElementById("whFreq").style.color = s.color;
+            document.getElementById("whName").textContent = s.name;
+            document.getElementById("whTrack").textContent = `${lv.track.artist} — ${lv.track.title}`;
+          });
+          node.addEventListener("click", () => { tuneStation(s.name); toggleWheel(false); });
+          cont.appendChild(node);
+        });
+      }
+      bd.classList.toggle("open", open);
+    }
+
+    document.getElementById("btnOpenWheel").addEventListener("click", () => toggleWheel(true));
+    document.getElementById("wheelBackdrop").addEventListener("click", e => { if (e.target.id === "wheelBackdrop") toggleWheel(false); });
+
+    window.addEventListener("keydown", e => {
+      if (e.code === "KeyQ") toggleWheel();
+      else if (e.code === "Escape") toggleWheel(false);
+      else if (e.code === "ArrowRight") stepFrequency(1);
+      else if (e.code === "ArrowLeft") stepFrequency(-1);
+      else if (e.code === "Space") { e.preventDefault(); document.getElementById("btnPower").click(); }
+    });
+
+    // Spectrum canvas
+    const canvas = document.getElementById("spectrumCanvas");
+    const ctx = canvas.getContext("2d");
+    const BARS = 48, barVals = new Array(BARS).fill(0.06);
+
+    function drawSpectrum(ts) {
+      const w = canvas.width, h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+      const st = state.stations.find(s => s.name === state.activeName);
+      const color = st ? st.color : "#ff2a85";
+
+      let liveFft = false;
+      if (state.powerOn && analyser && freqBins) {
+        analyser.getByteFrequencyData(freqBins);
+        for (let k = 0; k < 20; k++) if (freqBins[k] > 3) { liveFft = true; break; }
+      }
+
+      const gap = 4, barW = (w - gap * (BARS - 1)) / BARS;
+      for (let i = 0; i < BARS; i++) {
+        let target = 0.05;
+        if (state.powerOn && state.volume > 0) {
+          if (liveFft) {
+            const bi = Math.min(freqBins.length - 1, Math.floor((i / BARS) * (freqBins.length * 0.72)));
+            target = Math.max(0.05, (freqBins[bi] / 255) * (0.55 + state.volume * 0.6));
+          } else if (!audio.paused) {
+            target = Math.min(1, (0.2 + Math.abs(Math.sin(ts * 0.006 + i * 0.45)) * 0.55) * state.volume);
+          }
+        }
+        barVals[i] += (target - barVals[i]) * 0.28;
+        const bh = Math.max(3, barVals[i] * h);
+        const grad = ctx.createLinearGradient(0, h, 0, 0);
+        grad.addColorStop(0, color + "55");
+        grad.addColorStop(1, color);
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.roundRect(i * (barW + gap), h - bh, barW, bh, 2);
+        ctx.fill();
+      }
+      requestAnimationFrame(drawSpectrum);
+    }
+
+    async function boot() {
+      const res = await fetch("/api/stations");
+      const data = await res.json();
+      const artists = new Set();
+      let totalSec = 0, idx = 0;
+
+      const entries = Object.entries(data.stations).sort((a, b) => a[0].localeCompare(b[0]));
+      state.stations = [];
+      for (const [key, entry] of entries) {
+        if (!entry.tracks || !entry.tracks.length) continue;
+        const name = entry.name || key;
+        const th = THEMES[name] || { freq: parseFloat(entry.frequency) || 100.1, icon: "📻", color: "#00d4ff" };
+        const rawTracks = entry.tracks.map(t => {
+          if (t.artist) artists.add(t.artist.trim().toLowerCase());
+          const dur = t.duration_sec >= 5 ? t.duration_sec : 180;
+          totalSec += dur;
+          return {
+            id: t.id,
+            title: cleanTitle(t.filename, t.artist),
+            artist: t.artist || "Unknown Artist",
+            album: t.album || "",
+            genre: t.genre || entry.format,
+            codec: codecBadge(t.filename, t.album),
+            isAlac: /\.m4a$/i.test(t.filename) && /\[ALAC\]/i.test(t.album || ""),
+            bpm: Math.round(t.bpm > 30 ? t.bpm : 112),
+            energy: Math.round((t.energy ?? 0.65) * 100),
+            dur
+          };
+        });
+        const stObj = {
+          name,
+          format: entry.format,
+          freq: th.freq,
+          icon: th.icon,
+          color: th.color,
+          phase: (fnvHash(name) % 86400) + idx * 137,
+          rawTracks
+        };
+        idx++;
+        buildSchedule(stObj);
+        state.stations.push(stObj);
+      }
+
+      document.getElementById("statsPill").textContent =
+        `${data.tagged.toLocaleString("ru-RU")} треков · ${artists.size.toLocaleString("ru-RU")} артистов · ${Math.round(totalSec / 3600)} ч`;
+
+      buildTuner();
+      render();
+      setInterval(() => {
+        document.getElementById("clockPill").textContent = new Date().toLocaleTimeString("ru-RU");
+        render();
+        if (state.powerOn) syncAudio(false);
+      }, 1000);
+    }
+
+    document.getElementById("clockPill").textContent = new Date().toLocaleTimeString("ru-RU");
+    requestAnimationFrame(drawSpectrum);
+    boot();
+  </script>
+</body>
+</html>

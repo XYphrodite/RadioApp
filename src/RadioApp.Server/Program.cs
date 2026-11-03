@@ -31,6 +31,8 @@ var app = builder.Build();
 
 app.UseCors();
 app.UseResponseCompression();
+app.UseDefaultFiles();
+app.UseStaticFiles();
 
 // Warm up catalog cache on startup
 var startupCache = app.Services.GetRequiredService<ServerCatalogCache>();
