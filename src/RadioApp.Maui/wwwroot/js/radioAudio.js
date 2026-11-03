@@ -27,6 +27,23 @@ window.radioAudio = (() => {
 
   const barVals = new Array(BARS).fill(0.08);
   const failedDirectIds = new Set();
+  const retriedNoCorsIds = new Set();
+
+  function updateMediaSession(opts) {
+    if (!("mediaSession" in navigator) || typeof MediaMetadata === "undefined") return;
+    try {
+      const artwork = opts.coverUrl
+        ? [{ src: opts.coverUrl, sizes: "512x512", type: "image/jpeg" }]
+        : [];
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: opts.trackTitle || "Прямой эфир",
+        artist: opts.trackArtist || "RadioWork FM",
+        album: opts.stationLabel || "RadioWork // FM",
+        artwork
+      });
+      navigator.mediaSession.playbackState = opts.powerOn ? "playing" : "paused";
+    } catch (_) {}
+  }
 
   function ensureAudioElement() {
     if (audioEl) return audioEl;
@@ -41,8 +58,23 @@ window.radioAudio = (() => {
     });
 
     audioEl.addEventListener("error", () => {
-      // Automatic fallback to server-side ffmpeg lossless FLAC stream if codec (e.g. ALAC) isn't decoded natively
-      if (currentTrackId >= 0 && !currentTranscodeMode && currentTranscodeBaseUrl) {
+      if (currentTrackId < 0) return;
+
+      // 1) If anonymous CORS was blocked by an intermediate proxy, retry without crossOrigin attribute
+      if (audioEl.crossOrigin && !retriedNoCorsIds.has(currentTrackId)) {
+        retriedNoCorsIds.add(currentTrackId);
+        const currentSrc = audioEl.src;
+        audioEl.removeAttribute("crossorigin");
+        audioEl.crossOrigin = null;
+        audioEl.src = currentSrc;
+        if (vizState.powerOn) {
+          audioEl.play().catch(() => {});
+        }
+        return;
+      }
+
+      // 2) Automatic fallback to server-side ffmpeg lossless FLAC stream if codec (e.g. ALAC) isn't decoded natively
+      if (!currentTranscodeMode && currentTranscodeBaseUrl) {
         failedDirectIds.add(currentTrackId);
         currentTranscodeMode = true;
         const ss = Math.max(0, streamBaseOffsetSec);
@@ -153,6 +185,7 @@ window.radioAudio = (() => {
     if (trackChanged) {
       currentTrackId = trackId;
       currentTranscodeMode = useTranscode;
+      updateMediaSession(opts);
 
       if (useTranscode) {
         streamBaseOffsetSec = targetElapsed;
@@ -202,6 +235,9 @@ window.radioAudio = (() => {
     if (audioEl) {
       audioEl.volume = vizState.volume;
       audioEl.muted = !vizState.powerOn;
+    }
+    if ("mediaSession" in navigator) {
+      try { navigator.mediaSession.playbackState = vizState.powerOn ? "playing" : "paused"; } catch (_) {}
     }
   }
 
@@ -269,6 +305,24 @@ window.radioAudio = (() => {
   function init(ref) {
     dotNetRef = ref;
     ensureAudioElement();
+
+    if ("mediaSession" in navigator && !window.__radioMediaSessionBound) {
+      window.__radioMediaSessionBound = true;
+      try {
+        navigator.mediaSession.setActionHandler("play", () => {
+          if (dotNetRef) dotNetRef.invokeMethodAsync("OnMediaPowerAsync", true).catch(() => {});
+        });
+        navigator.mediaSession.setActionHandler("pause", () => {
+          if (dotNetRef) dotNetRef.invokeMethodAsync("OnMediaPowerAsync", false).catch(() => {});
+        });
+        navigator.mediaSession.setActionHandler("previoustrack", () => {
+          if (dotNetRef) dotNetRef.invokeMethodAsync("OnStepFrequencyAsync", -1).catch(() => {});
+        });
+        navigator.mediaSession.setActionHandler("nexttrack", () => {
+          if (dotNetRef) dotNetRef.invokeMethodAsync("OnStepFrequencyAsync", 1).catch(() => {});
+        });
+      } catch (_) {}
+    }
 
     if (!rafId) {
       rafId = requestAnimationFrame(drawSpectrum);

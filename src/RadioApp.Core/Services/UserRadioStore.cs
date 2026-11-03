@@ -31,6 +31,9 @@ public sealed class UserRadioPreferences
 
     [JsonPropertyName("station_skip_offsets_sec")]
     public Dictionary<string, double> StationSkipOffsetsSec { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    [JsonPropertyName("tailscale_auth_key")]
+    public string TailscaleAuthKey { get; set; } = "";
 }
 
 public sealed class UserRadioStore

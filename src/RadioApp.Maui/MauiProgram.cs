@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using RadioApp.Core.Services;
+using RadioApp.Maui.Services;
 
 namespace RadioApp.Maui;
 
@@ -12,6 +13,17 @@ public static class MauiProgram
         Environment.SetEnvironmentVariable(
             "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
             "--autoplay-policy=no-user-gesture-required");
+#endif
+
+#if ANDROID
+        Microsoft.AspNetCore.Components.WebView.Maui.BlazorWebViewHandler.BlazorWebViewMapper.AppendToMapping(
+            "RadioAndroidWebView",
+            (handler, _) =>
+            {
+                var settings = handler.PlatformView.Settings;
+                settings.MediaPlaybackRequiresUserGesture = false;
+                settings.MixedContentMode = global::Android.Webkit.MixedContentHandling.AlwaysAllow;
+            });
 #endif
 
         var builder = MauiApp.CreateBuilder();
@@ -34,6 +46,12 @@ public static class MauiProgram
             var statePath = Path.Combine(FileSystem.AppDataDirectory, "user_state.json");
             return new UserRadioStore(statePath);
         });
+
+#if ANDROID
+        builder.Services.AddSingleton<ITailscaleBridge, RadioApp.Maui.Platforms.Android.AndroidTsnetBridge>();
+#else
+        builder.Services.AddSingleton<ITailscaleBridge, NoOpTailscaleBridge>();
+#endif
 
         builder.Services.AddSingleton<RadioBroadcastEngine>();
 

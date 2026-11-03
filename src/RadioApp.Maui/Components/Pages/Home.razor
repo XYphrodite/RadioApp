@@ -2,13 +2,14 @@
 @implements IAsyncDisposable
 @inject RadioBroadcastEngine Engine
 @inject UserRadioStore Store
+@inject ITailscaleBridge Tailscale
 @inject HttpClient Http
 @inject IJSRuntime JS
 
 <div class="ambient-bg"></div>
 <div class="scanlines"></div>
 
-<div class="app-shell">
+<div class="app-shell" @onclick="ClosePopoverIfOpen">
     <!-- TOP BAR -->
     <header class="topbar">
         <div class="brand">
@@ -26,13 +27,13 @@
                     @FormatInt(Engine.Stats.TotalTracks) треков · @FormatInt(Engine.Stats.TotalArtists) артистов · @Engine.Stats.TotalHours ч
                 </span>
             }
-            <span class="stat-pill">@_clockText</span>
+            <span class="stat-pill hide-xs">@_clockText</span>
 
-            <button class="btn-ghost" @onclick="ToggleWheel" title="Круговое меню выбора волны как в GTA [Q]">
-                ◎ Колесо станций <span class="kbd">Q</span>
+            <button class="btn-ghost" @onclick="ToggleWheel" @onclick:stopPropagation="true" title="Круговое меню выбора волны как в GTA [Q]">
+                ◎ <span class="hide-xs">Колесо станций</span><span class="show-xs">Волны</span> <span class="kbd">Q</span>
             </button>
 
-            <button class="btn-ghost" @onclick="ToggleServerPopover" title="Настройки подключения к аудиосерверу">
+            <button class="btn-ghost" @onclick="ToggleServerPopover" @onclick:stopPropagation="true" title="Настройки подключения и Tailscale">
                 ⚙
             </button>
 
@@ -54,7 +55,7 @@
 
                     @if (!string.IsNullOrEmpty(_connectionError))
                     {
-                        <div style="font-size: 11.5px; color: #ff8fa3;">@_connectionError</div>
+                        <div class="popover-err">@_connectionError</div>
                     }
 
                     <div class="popover-actions">
@@ -69,6 +70,83 @@
                             </button>
                         }
                     </div>
+
+                    @if (Tailscale.IsSupported)
+                    {
+                        <div class="popover-divider"></div>
+
+                        <div class="popover-title">
+                            <span>ВШИТЫЙ TAILSCALE (БЕЗ VPN-СЛОТА)</span>
+                            <span style="color: @(Tailscale.IsConnected ? "#19f086" : (_awaitingBrowserLogin ? "#ff9f1c" : "#a5aec4"))">
+                                @(Tailscale.IsConnected ? "● ТУННЕЛЬ АКТИВЕН" : (_awaitingBrowserLogin ? "● ЖДЁМ ВХОД" : "● ВЫКЛ"))
+                            </span>
+                        </div>
+
+                        <div class="ts-subtext">
+                            Работает внутри приложения поверх Happ / системного VPN.
+                        </div>
+
+                        @if (Tailscale.IsConnected)
+                        {
+                            <div class="ts-connected-box">
+                                <div>
+                                    <div class="ts-connected-main">
+                                        @(string.IsNullOrEmpty(Tailscale.LoginName) ? "Tailnet подключён" : Tailscale.LoginName)
+                                    </div>
+                                    @if (!string.IsNullOrEmpty(Tailscale.TargetDisplay))
+                                    {
+                                        <div class="ts-connected-sub">Мост → @Tailscale.TargetDisplay</div>
+                                    }
+                                </div>
+                                <button class="btn-ctrl" @onclick="LogoutTailscaleAsync" disabled="@Tailscale.IsBusy">
+                                    Выйти
+                                </button>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="popover-actions">
+                                <button class="btn-ts-primary"
+                                        @onclick="StartTailscaleBrowserLoginAsync"
+                                        disabled="@Tailscale.IsBusy">
+                                    @(Tailscale.IsBusy ? "Подготовка входа..." : "🔑 Войти в Tailscale")
+                                </button>
+
+                                <button class="btn-ctrl"
+                                        @onclick="() => _showAuthKeyInput = !_showAuthKeyInput"
+                                        title="Подключиться по ключу tskey-auth-...">
+                                    Ключ
+                                </button>
+                            </div>
+
+                            @if (_awaitingBrowserLogin && !string.IsNullOrEmpty(Tailscale.AuthUrl))
+                            {
+                                <div class="ts-login-wait">
+                                    <span>Подтверди вход в открывшемся браузере — радио подключится само.</span>
+                                    <button class="btn-ctrl" @onclick="OpenAuthUrlAgainAsync">Открыть ссылку</button>
+                                </div>
+                            }
+
+                            @if (_showAuthKeyInput)
+                            {
+                                <input class="server-input"
+                                       type="password"
+                                       placeholder="tskey-auth-..."
+                                       @bind="_authKeyInput"
+                                       @bind:event="oninput" />
+                                <button class="btn-ctrl"
+                                        @onclick="ConnectTailscaleAuthKeyAsync"
+                                        disabled="@Tailscale.IsBusy">
+                                    Подключить по Auth Key
+                                </button>
+                            }
+                        }
+
+                        @if (!string.IsNullOrEmpty(Tailscale.LastError))
+                        {
+                            <div class="popover-err">@Tailscale.LastError</div>
+                        }
+                    }
                 </div>
             }
         </div>
@@ -81,8 +159,8 @@
             <!-- FM ANALOG/DIGITAL SCALE -->
             <div class="tuner-box">
                 <div class="tuner-header">
-                    <span>FM BAND 87.5 — 108.0 MHz · ПОТЯНИ ШКАЛУ ИЛИ КРУТИ КОЛЕСО МЫШИ</span>
-                    <span>@(_isOnline ? "SIGNAL 99% · STEREO RDS" : "NO CARRIER · SEARCHING")</span>
+                    <span class="tuner-hint">FM BAND 87.5 — 108.0 MHz <span class="hide-xs">· ПОТЯНИ ШКАЛУ ИЛИ КРУТИ КОЛЕСО</span></span>
+                    <span>@(_isOnline ? "SIGNAL 99% · RDS" : "SEARCHING...")</span>
                 </div>
                 <div class="tuner-scale" id="tunerScale">
                     <div class="tuner-ticks">
@@ -123,8 +201,33 @@
                 @if (!_isOnline && !Engine.IsLoaded)
                 {
                     <div class="offline-banner">
-                        <span>Нет связи с сервером фонотеки (<strong>@Store.Preferences.ServerBaseUrl</strong>). Автоповтор каждые 5 сек...</span>
-                        <button class="btn-ctrl" @onclick="() => ReloadCatalogAsync(showSpinner: true)">Повторить</button>
+                        <div class="offline-banner-text">
+                            @if (Tailscale.IsSupported && !Tailscale.IsConnected)
+                            {
+                                <div>
+                                    <strong>Нужен доступ к эфир-серверу (@Store.Preferences.ServerBaseUrl)</strong>
+                                    <div class="offline-sub">
+                                        Войди во вшитый Tailscale один раз — он работает одновременно с Happ VPN без отключения твоего VPN.
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <span>Нет связи с сервером фонотеки (<strong>@Store.Preferences.ServerBaseUrl</strong>). Автоповтор каждые 5 сек...</span>
+                            }
+                        </div>
+
+                        <div class="offline-actions">
+                            @if (Tailscale.IsSupported && !Tailscale.IsConnected)
+                            {
+                                <button class="btn-ts-primary"
+                                        @onclick="StartTailscaleBrowserLoginAsync"
+                                        disabled="@Tailscale.IsBusy">
+                                    @(Tailscale.IsBusy ? "Запуск Tailscale..." : (_awaitingBrowserLogin ? "🔑 Открыть вход снова" : "🔑 Войти в Tailscale"))
+                                </button>
+                            }
+                            <button class="btn-ctrl" @onclick="() => ReloadCatalogAsync(showSpinner: true)">Повторить</button>
+                        </div>
                     </div>
                 }
 
@@ -174,7 +277,7 @@
                         <div class="track-meta">
                             <div class="on-air-eyebrow">
                                 <span>● СЕЙЧАС В ЭФИРЕ</span>
-                                <span>· @FormatInt(active.TotalTrackCount) треков в ротации</span>
+                                <span>· @FormatInt(active.TotalTrackCount) треков</span>
                             </div>
                             <div class="track-title" title="@tr.DisplayTitle">@tr.DisplayTitle</div>
                             <div class="track-artist" title="@tr.Artist">@tr.Artist</div>
@@ -183,7 +286,7 @@
                             <div class="broadcast-bar-wrap" title="Эфир идёт в реальном времени одновременно на всех 11 станциях">
                                 <div class="broadcast-times">
                                     <span>@FormatTime(active.ElapsedSec)</span>
-                                    <span class="no-scrub-hint">🔒 Прямой эфир — перемотка отключена</span>
+                                    <span class="no-scrub-hint">🔒 Прямой эфир <span class="hide-xs">— перемотка отключена</span></span>
                                     <span>@FormatTime(active.DurationSec)</span>
                                 </div>
                                 <div class="broadcast-progress-track">
@@ -197,8 +300,10 @@
                 }
                 else
                 {
-                    <div style="margin: auto; text-align: center; color: var(--text-1); font-family: var(--mono); font-size: 13px;">
-                        @(_isLoadingCatalog ? "ЗАГРУЗКА КАТАЛОГА 11 РАДИОСТАНЦИЙ..." : "ОЖИДАНИЕ ПОДКЛЮЧЕНИЯ К РАДИОСЕРВЕРУ")
+                    <div class="deck-placeholder">
+                        @(_isLoadingCatalog || Tailscale.IsBusy
+                            ? "ПОДКЛЮЧЕНИЕ К ЭФИР-СЕРВЕРУ РАДИОСТАНЦИЙ..."
+                            : "ОЖИДАНИЕ СИГНАЛА РАДИОСЕРВЕРА")
                     </div>
                 }
 
@@ -213,11 +318,11 @@
                     <button class="btn-power @(Store.Preferences.PowerOn ? "" : "off")"
                             @onclick="TogglePowerAsync"
                             title="Включить / приглушить приёмник (эфир продолжает идти!) [Space]">
-                        ⏻ <span>@(Store.Preferences.PowerOn ? "В ЭФИРЕ" : "MUTE (ЭФИР ИДЁТ)")</span>
+                        ⏻ <span>@(Store.Preferences.PowerOn ? "В ЭФИРЕ" : "MUTE")</span>
                     </button>
                     <button class="btn-ctrl" @onclick="() => StepFrequencyAsync(-1)" title="Предыдущая частота [←]">⏮ Волна −</button>
                     <button class="btn-ctrl" @onclick="() => StepFrequencyAsync(1)" title="Следующая частота [→]">Волна + ⏭</button>
-                    <button class="btn-ctrl" @onclick="SkipTrackWithStaticAsync" title="Сбросить текущий трек на волне через радиопомеху">⚡ Помехи (след.)</button>
+                    <button class="btn-ctrl" @onclick="SkipTrackWithStaticAsync" title="Сбросить текущий трек на волне через радиопомеху">⚡ Помехи</button>
                 </div>
 
                 <div class="feedback-group">
@@ -330,7 +435,7 @@
                 </div>
             }
             <div style="font-family: var(--mono); font-size: 10.5px; color: var(--text-2); margin-top: 12px;">
-                Кликни сектор или Esc
+                Выбери станцию
             </div>
         </div>
 
@@ -368,22 +473,56 @@
 
     private string _clockText = DateTime.Now.ToString("HH:mm:ss");
     private string _serverUrlInput = "";
+    private string _authKeyInput = "";
     private string? _connectionError;
     private bool _isOnline;
     private bool _isLoadingCatalog;
     private bool _wheelOpen;
     private bool _serverPopoverOpen;
+    private bool _showAuthKeyInput;
+    private bool _awaitingBrowserLogin;
+    private bool _pollingTailscale;
     private bool _jsInitialized;
     private int _lastSyncedTrackId = -1;
     private string _lastSyncedStation = "";
     private int _offlineRetryTicks;
+    private int _tsPollTicks;
 
     private int VolumePercent => (int)Math.Round(Store.Preferences.Volume * 100.0);
 
     protected override async Task OnInitializedAsync()
     {
         _serverUrlInput = Store.Preferences.ServerBaseUrl;
-        await ReloadCatalogAsync(showSpinner: true);
+        _authKeyInput = Store.Preferences.TailscaleAuthKey;
+        Tailscale.StateChanged += OnTailscaleStateChanged;
+
+        if (Tailscale.IsSupported && Tailscale.HasSavedSession(Store.Preferences.TailscaleAuthKey))
+        {
+            _ = AutoResumeTailscaleAndConnectAsync();
+        }
+        else
+        {
+            await ReloadCatalogAsync(showSpinner: true);
+        }
+    }
+
+    private void OnTailscaleStateChanged()
+    {
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private async Task AutoResumeTailscaleAndConnectAsync()
+    {
+        var fwdUrl = await Tailscale.TryAutoConnectAsync(
+            Store.Preferences.ServerBaseUrl,
+            Store.Preferences.TailscaleAuthKey);
+
+        if (!string.IsNullOrWhiteSpace(fwdUrl))
+        {
+            Engine.RuntimeBaseUrlOverride = fwdUrl;
+        }
+
+        await InvokeAsync(() => ReloadCatalogAsync(showSpinner: true));
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -413,10 +552,20 @@
             {
                 _clockText = DateTime.Now.ToString("HH:mm:ss");
 
+                if (Tailscale.IsSupported && _awaitingBrowserLogin && !_pollingTailscale)
+                {
+                    _tsPollTicks++;
+                    if (_tsPollTicks >= 2)
+                    {
+                        _tsPollTicks = 0;
+                        _ = PollTailscaleLoginAsync(ct);
+                    }
+                }
+
                 if (!Engine.IsLoaded)
                 {
                     _offlineRetryTicks++;
-                    if (_offlineRetryTicks >= 5 && !_isLoadingCatalog)
+                    if (_offlineRetryTicks >= 5 && !_isLoadingCatalog && !Tailscale.IsBusy)
                     {
                         _offlineRetryTicks = 0;
                         await InvokeAsync(() => ReloadCatalogAsync(showSpinner: false));
@@ -446,6 +595,121 @@
         }
     }
 
+    private async Task PollTailscaleLoginAsync(CancellationToken ct)
+    {
+        if (_pollingTailscale)
+            return;
+
+        _pollingTailscale = true;
+        try
+        {
+            var fwdUrl = await Tailscale.PollAndForwardIfRunningAsync(Store.Preferences.ServerBaseUrl, ct);
+            if (!string.IsNullOrWhiteSpace(fwdUrl))
+            {
+                _awaitingBrowserLogin = false;
+                Engine.RuntimeBaseUrlOverride = fwdUrl;
+                _coverFailedTrackIds.Clear();
+                await InvokeAsync(async () =>
+                {
+                    await ReloadCatalogAsync(showSpinner: true);
+                    if (_isOnline)
+                        _serverPopoverOpen = false;
+                });
+            }
+        }
+        finally
+        {
+            _pollingTailscale = false;
+        }
+    }
+
+    private async Task StartTailscaleBrowserLoginAsync()
+    {
+        if (!Tailscale.IsSupported)
+            return;
+
+        if (_awaitingBrowserLogin && !string.IsNullOrWhiteSpace(Tailscale.AuthUrl))
+        {
+            await OpenAuthUrlAgainAsync();
+            return;
+        }
+
+        var authUrl = await Tailscale.BeginInteractiveLoginAsync();
+        if (Tailscale.IsConnected)
+        {
+            var fwdUrl = await Tailscale.PollAndForwardIfRunningAsync(Store.Preferences.ServerBaseUrl);
+            if (!string.IsNullOrWhiteSpace(fwdUrl))
+            {
+                Engine.RuntimeBaseUrlOverride = fwdUrl;
+                _coverFailedTrackIds.Clear();
+                await ReloadCatalogAsync(showSpinner: true);
+                if (_isOnline)
+                    _serverPopoverOpen = false;
+            }
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(authUrl))
+        {
+            _awaitingBrowserLogin = true;
+            try
+            {
+                await Launcher.Default.OpenAsync(new Uri(authUrl));
+            }
+            catch (Exception ex)
+            {
+                _connectionError = $"Не удалось открыть браузер: {ex.Message}";
+            }
+        }
+        StateHasChanged();
+    }
+
+    private async Task OpenAuthUrlAgainAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(Tailscale.AuthUrl))
+        {
+            try
+            {
+                await Launcher.Default.OpenAsync(new Uri(Tailscale.AuthUrl));
+            }
+            catch { }
+        }
+    }
+
+    private async Task ConnectTailscaleAuthKeyAsync()
+    {
+        if (!Tailscale.IsSupported || string.IsNullOrWhiteSpace(_authKeyInput))
+            return;
+
+        Store.Preferences.TailscaleAuthKey = _authKeyInput.Trim();
+        Store.Save();
+
+        var fwdUrl = await Tailscale.ConnectWithAuthKeyAsync(
+            Store.Preferences.TailscaleAuthKey,
+            Store.Preferences.ServerBaseUrl);
+
+        if (!string.IsNullOrWhiteSpace(fwdUrl))
+        {
+            _awaitingBrowserLogin = false;
+            Engine.RuntimeBaseUrlOverride = fwdUrl;
+            _coverFailedTrackIds.Clear();
+            await ReloadCatalogAsync(showSpinner: true);
+            if (_isOnline)
+                _serverPopoverOpen = false;
+        }
+    }
+
+    private async Task LogoutTailscaleAsync()
+    {
+        _awaitingBrowserLogin = false;
+        Store.Preferences.TailscaleAuthKey = "";
+        Store.Save();
+        Engine.RuntimeBaseUrlOverride = null;
+        await Tailscale.LogoutAsync();
+        _isOnline = false;
+        StateHasChanged();
+    }
+
     private async Task ReloadCatalogAsync(bool showSpinner)
     {
         if (_isLoadingCatalog)
@@ -457,6 +721,13 @@
 
         try
         {
+            if (Tailscale.IsSupported && Tailscale.IsConnected && string.IsNullOrWhiteSpace(Engine.RuntimeBaseUrlOverride))
+            {
+                var fwd = await Tailscale.PollAndForwardIfRunningAsync(Store.Preferences.ServerBaseUrl);
+                if (!string.IsNullOrWhiteSpace(fwd))
+                    Engine.RuntimeBaseUrlOverride = fwd;
+            }
+
             var ok = await Engine.LoadFromServerAsync(Http);
             _isOnline = ok;
             _connectionError = ok ? null : "Каталог станций пуст.";
@@ -507,10 +778,15 @@
         _lastSyncedTrackId = tr.Id;
         _lastSyncedStation = _activeStation.Name;
 
-        var baseUrl = UserRadioStore.NormalizeServerUrl(Store.Preferences.ServerBaseUrl);
+        var baseUrl = Engine.EffectiveBaseUrl;
+        var coverUrl = _coverFailedTrackIds.Contains(tr.Id) ? "" : Engine.GetCoverUrl(tr);
         await JS.InvokeVoidAsync("radioAudio.syncBroadcast", new
         {
             trackId = tr.Id,
+            trackTitle = tr.DisplayTitle,
+            trackArtist = tr.Artist,
+            stationLabel = $"{_activeStation.FrequencyMhz.ToString("0.0", CultureInfo.InvariantCulture)} FM · {_activeStation.Name}",
+            coverUrl,
             directUrl = $"{baseUrl}/api/stream/{tr.Id}",
             transcodeBaseUrl = $"{baseUrl}/api/stream/{tr.Id}?transcode=1",
             isTranscoded = tr.IsAlac,
@@ -637,6 +913,12 @@
 
     private void CloseWheelFromBackdrop() => _wheelOpen = false;
 
+    private void ClosePopoverIfOpen()
+    {
+        if (_serverPopoverOpen)
+            _serverPopoverOpen = false;
+    }
+
     private async Task SelectFromWheelAsync(string stationName)
     {
         _wheelOpen = false;
@@ -656,6 +938,17 @@
         _serverUrlInput = Store.Preferences.ServerBaseUrl;
         Store.Save();
         _coverFailedTrackIds.Clear();
+
+        if (Tailscale.IsSupported && Tailscale.IsConnected)
+        {
+            var fwdUrl = await Tailscale.PollAndForwardIfRunningAsync(Store.Preferences.ServerBaseUrl);
+            Engine.RuntimeBaseUrlOverride = fwdUrl;
+        }
+        else
+        {
+            Engine.RuntimeBaseUrlOverride = null;
+        }
+
         await ReloadCatalogAsync(showSpinner: true);
         if (_isOnline)
             _serverPopoverOpen = false;
@@ -696,6 +989,19 @@
     }
 
     [JSInvokable]
+    public async Task OnMediaPowerAsync(bool play)
+    {
+        if (Store.Preferences.PowerOn == play)
+            return;
+
+        Store.Preferences.PowerOn = play;
+        Store.Save();
+        RefreshSnapshots();
+        await SyncAudioAsync(staticBurstSec: play ? 0.06 : 0.0, forceSync: true);
+        StateHasChanged();
+    }
+
+    [JSInvokable]
     public async Task OnHotkeyAsync(string action)
     {
         switch (action)
@@ -722,6 +1028,13 @@
 
     private string GetServerHostLabel()
     {
+        if (Tailscale.IsSupported && Tailscale.IsConnected && !string.IsNullOrWhiteSpace(Engine.RuntimeBaseUrlOverride))
+        {
+            if (Uri.TryCreate(Store.Preferences.ServerBaseUrl, UriKind.Absolute, out var tsUri))
+                return $"Tailscale · {tsUri.Host}";
+            return "Tailscale";
+        }
+
         if (Uri.TryCreate(Store.Preferences.ServerBaseUrl, UriKind.Absolute, out var uri))
             return $"фонотека {uri.Host}";
         return "локальная фонотека";
@@ -746,6 +1059,7 @@
 
     public ValueTask DisposeAsync()
     {
+        Tailscale.StateChanged -= OnTailscaleStateChanged;
         _tickCts?.Cancel();
         _tickCts?.Dispose();
         _dotNetRef?.Dispose();

@@ -19,6 +19,17 @@ public sealed class RadioBroadcastEngine
     public bool IsLoaded => _schedules.Count > 0;
     public UserRadioPreferences Preferences => _store.Preferences;
 
+    /// <summary>
+    /// Optional runtime loopback URL (e.g. http://127.0.0.1:41234 from embedded Android tsnet forwarder)
+    /// that overrides ServerBaseUrl for HTTP/stream/cover requests without overwriting saved user preferences.
+    /// </summary>
+    public string? RuntimeBaseUrlOverride { get; set; }
+
+    public string EffectiveBaseUrl =>
+        !string.IsNullOrWhiteSpace(RuntimeBaseUrlOverride)
+            ? UserRadioStore.NormalizeServerUrl(RuntimeBaseUrlOverride)
+            : UserRadioStore.NormalizeServerUrl(_store.Preferences.ServerBaseUrl);
+
     public RadioBroadcastEngine(UserRadioStore store)
     {
         _store = store;
@@ -26,12 +37,14 @@ public sealed class RadioBroadcastEngine
 
     public async Task<bool> LoadFromServerAsync(HttpClient httpClient, CancellationToken ct = default)
     {
-        var baseUrl = UserRadioStore.NormalizeServerUrl(_store.Preferences.ServerBaseUrl);
+        var baseUrl = EffectiveBaseUrl;
         HttpResponseMessage? response = null;
         try
         {
             response = await httpClient.GetAsync($"{baseUrl}/api/stations", HttpCompletionOption.ResponseHeadersRead, ct);
-            if (!response.IsSuccessStatusCode && TryResolveIpBaseUrl(baseUrl, out var ipUrl))
+            if (!response.IsSuccessStatusCode &&
+                string.IsNullOrWhiteSpace(RuntimeBaseUrlOverride) &&
+                TryResolveIpBaseUrl(baseUrl, out var ipUrl))
             {
                 response.Dispose();
                 response = await httpClient.GetAsync($"{ipUrl}/api/stations", HttpCompletionOption.ResponseHeadersRead, ct);
@@ -374,7 +387,7 @@ public sealed class RadioBroadcastEngine
 
     public string GetStreamUrl(RadioTrack track, bool forceTranscode = false, double startOffsetSec = 0)
     {
-        var baseUrl = UserRadioStore.NormalizeServerUrl(_store.Preferences.ServerBaseUrl);
+        var baseUrl = EffectiveBaseUrl;
         if (forceTranscode || track.IsAlac)
         {
             var ss = Math.Max(0, startOffsetSec).ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
@@ -385,7 +398,7 @@ public sealed class RadioBroadcastEngine
 
     public string GetCoverUrl(RadioTrack track)
     {
-        var baseUrl = UserRadioStore.NormalizeServerUrl(_store.Preferences.ServerBaseUrl);
+        var baseUrl = EffectiveBaseUrl;
         return $"{baseUrl}/api/cover/{track.Id}";
     }
 

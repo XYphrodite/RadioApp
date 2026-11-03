@@ -19,11 +19,17 @@
   - Автоматический потоковый ремультиплекс/транскод `ALAC (.m4a)` в lossless `FLAC` на лету через `ffmpeg` с серверным смещением `-ss`.
   - Автоматическая подгрузка обложек альбомов (внешних `cover.jpg` или встроенных в аудиофайл) на яблоко вращающегося винила.
 
+- **Android со вшитым Tailscale (`tsnet-bridge`)**:
+  - Работает полностью в `userspace` поверх HTTPS DERP (`TCP 443`, `MTU 1200`) **без системного `VpnService`-слота** — не конфликтует с активным сторонним VPN (Happ, VLESS/Xray и др.).
+  - Авторизация в 1 тап через браузер (`🔑 Войти в Tailscale`) с сохранением сессии и автоматическим резолвом пира радиосервера через локальный loopback-мост `127.0.0.1`.
+  - Поддержка системного медиаплеера шторки / экрана блокировки Android и гарнитуры (`MediaSession`: обложка, трек, переключение волн `⏮` / `⏭`).
+
 ## Состав решения (`RadioApp.slnx`)
 
 - `src/RadioApp.Core` — модели каталога, пользовательское хранилище `UserRadioStore` и движок синхронного вещания `RadioBroadcastEngine`.
 - `src/RadioApp.Server` — лёгкий `.NET 10` аудио/каталог сервер (`GET /api/health`, `/api/stations`, `/api/stream/{id}`, `/api/cover/{id}`).
 - `src/RadioApp.Maui` — клиентское приложение `.NET 10` MAUI Blazor Hybrid (`net10.0-windows10.0.19041.0` + `net10.0-android`).
+- `tools/tsnet-bridge` — Go/`gomobile` модуль вшитого userspace-клиента Tailscale (`tsnet.aar`).
 - `tests/RadioApp.Tests` — модульные тесты `xUnit`.
 
 ## Горячие клавиши

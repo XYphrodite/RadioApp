@@ -16,9 +16,9 @@
 
         <ApplicationTitle>RadioWork FM</ApplicationTitle>
         <ApplicationId>com.radiowork.fm</ApplicationId>
-        <Version>1.0.0</Version>
-        <ApplicationDisplayVersion>1.0.0</ApplicationDisplayVersion>
-        <ApplicationVersion>1</ApplicationVersion>
+        <Version>1.1.0</Version>
+        <ApplicationDisplayVersion>1.1.0</ApplicationDisplayVersion>
+        <ApplicationVersion>2</ApplicationVersion>
 
         <WindowsPackageType>None</WindowsPackageType>
 
@@ -28,12 +28,28 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#07080C" />
+        <MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#07080C">
+            <ForegroundScale Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">0.72</ForegroundScale>
+        </MauiIcon>
         <MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#07080C" BaseSize="128,128" />
         <MauiImage Include="Resources\Images\*" />
         <MauiFont Include="Resources\Fonts\*" />
         <MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
     </ItemGroup>
+
+    <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
+        <ProguardConfiguration Include="Platforms\Android\proguard.cfg" />
+    </ItemGroup>
+
+    <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android' and Exists('Platforms\Android\libs\tsnet.aar')">
+        <AndroidAarLibrary Include="Platforms\Android\libs\tsnet.aar" />
+    </ItemGroup>
+
+    <Target Name="RequireTsnetAarInCi" BeforeTargets="PrepareForBuild"
+            Condition="'$(TargetFramework)' == 'net10.0-android' and '$(RequireTsnetAar)' == 'true'">
+        <Error Condition="!Exists('$(MSBuildProjectDirectory)\Platforms\Android\libs\tsnet.aar')"
+               Text="Embedded Tailscale requires Platforms/Android/libs/tsnet.aar." />
+    </Target>
 
     <ItemGroup>
         <PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />

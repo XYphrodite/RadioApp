@@ -19,6 +19,7 @@ Thumbs.db
 Desktop.ini
 .DS_Store
 
-## Android signing keys
+## Android signing keys & generated Go AARs
 *.keystore
 *.jks
+*.aar

@@ -16,7 +16,42 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  build-tsnet:
+    name: Build Embedded Tailscale AAR (Go/gomobile)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/tsnet-bridge/go.mod
+          cache-dependency-path: tools/tsnet-bridge/go.sum
+
+      - name: Build tsnet.aar via gomobile
+        run: |
+          sed -i 's/\r$//' tools/tsnet-bridge/build-aar.sh
+          chmod +x tools/tsnet-bridge/build-aar.sh
+          ./tools/tsnet-bridge/build-aar.sh
+
+      - name: Upload tsnet.aar artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tsnet-aar
+          path: tools/tsnet-bridge/tsnet.aar
+          if-no-files-found: error
+
   build:
+    name: Build Server, Windows & Android Packages
+    needs: build-tsnet
     runs-on: windows-latest
     timeout-minutes: 30
     defaults:
@@ -25,6 +60,19 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Download embedded tsnet.aar
+        uses: actions/download-artifact@v4
+        with:
+          name: tsnet-aar
+          path: src/RadioApp.Maui/Platforms/Android/libs
+
+      - name: Verify tsnet.aar present
+        run: |
+          if (-not (Test-Path "src/RadioApp.Maui/Platforms/Android/libs/tsnet.aar")) {
+            throw "tsnet.aar missing after artifact download"
+          }
+          Get-Item "src/RadioApp.Maui/Platforms/Android/libs/tsnet.aar" | Format-List FullName, Length
 
       - name: Setup Java 17 (for Android SDK & APK signing)
         uses: actions/setup-java@v5
@@ -74,7 +122,7 @@ jobs:
             -DestinationPath "artifacts/dist/RadioWork-Windows-x64.zip" `
             -CompressionLevel Optimal -Force
 
-      - name: Publish RadioApp.Maui (Android Signed APK)
+      - name: Publish RadioApp.Maui (Android Signed APK + Embedded Tailscale)
         run: |
           $ksPath = Join-Path $PWD "artifacts/radiowork-ci.keystore"
           keytool -genkeypair -v `
@@ -90,6 +138,7 @@ jobs:
 
           dotnet publish src/RadioApp.Maui/RadioApp.Maui.csproj `
             -p:OnlyTarget=net10.0-android `
+            -p:RequireTsnetAar=true `
             -f net10.0-android `
             -c Release `
             -p:AndroidPackageFormat=apk `
@@ -129,5 +178,10 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           $assets = @(Get-ChildItem artifacts/dist -File | Select-Object -ExpandProperty FullName)
-          gh release create $env:RELEASE_TAG @assets --verify-tag --title "RadioWork FM $env:RELEASE_TAG" --generate-notes
-          if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
+          gh release view $env:RELEASE_TAG *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $env:RELEASE_TAG @assets --clobber
+          } else {
+            gh release create $env:RELEASE_TAG @assets --verify-tag --title "RadioWork FM $env:RELEASE_TAG" --generate-notes
+          }
+          if ($LASTEXITCODE -ne 0) { throw "gh release failed" }

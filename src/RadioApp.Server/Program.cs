@@ -29,6 +29,16 @@ builder.Services.AddSingleton<ServerCatalogCache>();
 
 var app = builder.Build();
 
+// Allow Chromium / Android BlazorWebView (https://0.0.0.0) Private Network Access to 127.0.0.1 / Tailnet HTTP
+app.Use(async (ctx, next) =>
+{
+    if (ctx.Request.Headers.ContainsKey("Access-Control-Request-Private-Network"))
+    {
+        ctx.Response.Headers["Access-Control-Allow-Private-Network"] = "true";
+    }
+    await next();
+});
+
 app.UseCors();
 app.UseResponseCompression();
 app.UseDefaultFiles();
