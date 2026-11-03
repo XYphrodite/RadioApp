@@ -1,0 +1,131 @@
+name: Build & Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17 (for Android SDK & APK signing)
+        uses: actions/setup-java@v4
+        with:
+          distribution: microsoft
+          java-version: "17"
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Install .NET 10 MAUI workloads (Windows + Android)
+        run: dotnet workload install maui-windows maui-android
+
+      - name: Run unit tests
+        run: dotnet test tests/RadioApp.Tests/RadioApp.Tests.csproj -c Release --nologo
+
+      - name: Publish RadioApp.Server (win-x64)
+        run: |
+          dotnet publish src/RadioApp.Server/RadioApp.Server.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained false `
+            -o artifacts/server
+          if ($LASTEXITCODE -ne 0) { throw "RadioApp.Server publish failed" }
+
+          New-Item -ItemType Directory -Force artifacts/dist | Out-Null
+          Compress-Archive -Path "artifacts/server/*" `
+            -DestinationPath "artifacts/dist/RadioWork-Server-win-x64.zip" `
+            -CompressionLevel Optimal -Force
+
+      - name: Publish RadioApp.Maui (Windows x64 Unpackaged)
+        run: |
+          dotnet publish src/RadioApp.Maui/RadioApp.Maui.csproj `
+            -f net10.0-windows10.0.19041.0 `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -p:WindowsPackageType=None `
+            -p:WindowsAppSDKSelfContained=true `
+            -o artifacts/windows
+          if ($LASTEXITCODE -ne 0) { throw "RadioApp.Maui Windows publish failed" }
+
+          Compress-Archive -Path "artifacts/windows/*" `
+            -DestinationPath "artifacts/dist/RadioWork-Windows-x64.zip" `
+            -CompressionLevel Optimal -Force
+
+      - name: Publish RadioApp.Maui (Android Signed APK)
+        run: |
+          $ksPath = Join-Path $PWD "artifacts/radiowork-ci.keystore"
+          keytool -genkeypair -v `
+            -keystore $ksPath `
+            -alias radiowork `
+            -keyalg RSA `
+            -keysize 2048 `
+            -validity 10000 `
+            -storepass radiowork123 `
+            -keypass radiowork123 `
+            -dname "CN=RadioWork FM, OU=Audio, O=RadioWork, L=Local, S=Local, C=US"
+          if ($LASTEXITCODE -ne 0) { throw "keytool failed" }
+
+          dotnet publish src/RadioApp.Maui/RadioApp.Maui.csproj `
+            -f net10.0-android `
+            -c Release `
+            -p:AndroidPackageFormat=apk `
+            -p:AndroidKeyStore=true `
+            -p:AndroidSigningKeyStore="$ksPath" `
+            -p:AndroidSigningKeyAlias=radiowork `
+            -p:AndroidSigningKeyPass=radiowork123 `
+            -p:AndroidSigningStorePass=radiowork123 `
+            -o artifacts/android
+          if ($LASTEXITCODE -ne 0) { throw "RadioApp.Maui Android publish failed" }
+
+          $apk = Get-ChildItem "artifacts/android/*-Signed.apk" | Select-Object -First 1
+          if (-not $apk) { $apk = Get-ChildItem "artifacts/android/*.apk" | Select-Object -First 1 }
+          if (-not $apk) { throw "Built Android APK not found" }
+
+          Copy-Item $apk.FullName "artifacts/dist/RadioWork-Android.apk" -Force
+
+      - name: Generate SHA-256 checksums
+        run: |
+          Get-ChildItem artifacts/dist -File | ForEach-Object {
+            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)" | Set-Content -LiteralPath "$($_.FullName).sha256" -Encoding ascii
+            Write-Host "$hash  $($_.Name)"
+          }
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: RadioWork-Packages
+          path: artifacts/dist/*
+          if-no-files-found: error
+
+      - name: Create GitHub Release on version tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          $assets = @(Get-ChildItem artifacts/dist -File | Select-Object -ExpandProperty FullName)
+          gh release create $env:RELEASE_TAG @assets --verify-tag --title "RadioWork FM $env:RELEASE_TAG" --generate-notes
+          if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }

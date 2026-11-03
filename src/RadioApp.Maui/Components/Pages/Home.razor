@@ -1,0 +1,754 @@
+@page "/"
+@implements IAsyncDisposable
+@inject RadioBroadcastEngine Engine
+@inject UserRadioStore Store
+@inject HttpClient Http
+@inject IJSRuntime JS
+
+<div class="ambient-bg"></div>
+<div class="scanlines"></div>
+
+<div class="app-shell">
+    <!-- TOP BAR -->
+    <header class="topbar">
+        <div class="brand">
+            <span class="live-dot @GetLiveDotClass()"></span>
+            <span class="brand-title">RadioWork // FM</span>
+            <span class="brand-sub">
+                @(_isOnline ? $"Прямой эфир · {GetServerHostLabel()}" : "Ожидание сигнала эфир-сервера...")
+            </span>
+        </div>
+
+        <div class="topbar-right">
+            @if (Engine.IsLoaded)
+            {
+                <span class="stat-pill hide-mobile">
+                    @FormatInt(Engine.Stats.TotalTracks) треков · @FormatInt(Engine.Stats.TotalArtists) артистов · @Engine.Stats.TotalHours ч
+                </span>
+            }
+            <span class="stat-pill">@_clockText</span>
+
+            <button class="btn-ghost" @onclick="ToggleWheel" title="Круговое меню выбора волны как в GTA [Q]">
+                ◎ Колесо станций <span class="kbd">Q</span>
+            </button>
+
+            <button class="btn-ghost" @onclick="ToggleServerPopover" title="Настройки подключения к аудиосерверу">
+                ⚙
+            </button>
+
+            @if (_serverPopoverOpen)
+            {
+                <div class="server-popover" @onclick:stopPropagation="true">
+                    <div class="popover-title">
+                        <span>ЭФИР-СЕРВЕР АУДИОТЕКИ</span>
+                        <span style="color: @(_isOnline ? "#19f086" : "#ff4d6d")">
+                            @(_isOnline ? "● ONLINE" : "● OFFLINE")
+                        </span>
+                    </div>
+
+                    <input class="server-input"
+                           type="text"
+                           placeholder="http://mks68i7rtx:5480"
+                           @bind="_serverUrlInput"
+                           @bind:event="oninput" />
+
+                    @if (!string.IsNullOrEmpty(_connectionError))
+                    {
+                        <div style="font-size: 11.5px; color: #ff8fa3;">@_connectionError</div>
+                    }
+
+                    <div class="popover-actions">
+                        <button class="btn-ctrl" @onclick="ApplyServerUrlAsync" disabled="@_isLoadingCatalog">
+                            @(_isLoadingCatalog ? "Подключение..." : "↻ Подключить")
+                        </button>
+
+                        @if (Store.Preferences.BannedTrackIds.Count > 0)
+                        {
+                            <button class="btn-ctrl" @onclick="ClearBansAsync" title="Вернуть забаненные треки в ротацию">
+                                Сброс банов (@Store.Preferences.BannedTrackIds.Count)
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </header>
+
+    <!-- MAIN WORKSPACE -->
+    <main class="workspace">
+        <!-- LEFT: FM RECEIVER -->
+        <section class="receiver-col">
+            <!-- FM ANALOG/DIGITAL SCALE -->
+            <div class="tuner-box">
+                <div class="tuner-header">
+                    <span>FM BAND 87.5 — 108.0 MHz · ПОТЯНИ ШКАЛУ ИЛИ КРУТИ КОЛЕСО МЫШИ</span>
+                    <span>@(_isOnline ? "SIGNAL 99% · STEREO RDS" : "NO CARRIER · SEARCHING")</span>
+                </div>
+                <div class="tuner-scale" id="tunerScale">
+                    <div class="tuner-ticks">
+                        @for (double f = 88.0; f <= 108.0; f += 0.5)
+                        {
+                            bool isMajor = Math.Abs(f % 2.0) < 0.01;
+                            string leftPct = FreqToPctCss(f);
+                            <div class="tick @(isMajor ? "major" : "minor")" style="left: @leftPct"></div>
+                            @if (isMajor)
+                            {
+                                <div class="tick-label" style="left: @leftPct">@((int)f)</div>
+                            }
+                        }
+
+                        @foreach (var st in _allStations)
+                        {
+                            bool isAct = string.Equals(st.Name, _activeStation?.Name, StringComparison.OrdinalIgnoreCase);
+                            <div class="station-pip @(isAct ? "active" : "")"
+                                 style="left: @FreqToPctCss(st.FrequencyMhz); background: @st.AccentHex; color: @st.AccentHex;"
+                                 title="@($"{st.FrequencyMhz.ToString("0.0", CultureInfo.InvariantCulture)} FM — {st.Name}")"
+                                 @onclick="() => TuneToStationAsync(st.Name)"
+                                 @onclick:stopPropagation="true">
+                            </div>
+                        }
+                    </div>
+
+                    @if (_activeStation is not null)
+                    {
+                        <div class="tuner-needle" style="left: @FreqToPctCss(_activeStation.FrequencyMhz)"></div>
+                    }
+                </div>
+            </div>
+
+            <!-- NOW BROADCASTING HERO -->
+            <div class="deck-card">
+                <div class="tuning-overlay" id="tuningFlash"></div>
+
+                @if (!_isOnline && !Engine.IsLoaded)
+                {
+                    <div class="offline-banner">
+                        <span>Нет связи с сервером фонотеки (<strong>@Store.Preferences.ServerBaseUrl</strong>). Автоповтор каждые 5 сек...</span>
+                        <button class="btn-ctrl" @onclick="() => ReloadCatalogAsync(showSpinner: true)">Повторить</button>
+                    </div>
+                }
+
+                @if (_activeStation is { } active)
+                {
+                    var tr = active.CurrentTrack;
+                    bool showCover = !_coverFailedTrackIds.Contains(tr.Id);
+
+                    <div class="deck-top">
+                        <div>
+                            <div class="station-freq-row">
+                                <span class="freq-big">@active.FrequencyMhz.ToString("0.0", CultureInfo.InvariantCulture)</span>
+                                <span class="freq-unit">MHz FM</span>
+                            </div>
+                            <div class="station-name-big">@active.Name</div>
+                            <div class="station-format">@active.Format</div>
+                        </div>
+
+                        <div class="rds-badges">
+                            <span class="rds-tag hi">@(string.IsNullOrWhiteSpace(tr.Genre) ? active.Format : tr.Genre)</span>
+                            <span class="rds-tag">@tr.CodecBadge</span>
+                            <span class="rds-tag">@tr.BpmRounded BPM</span>
+                            <span class="rds-tag">ENERGY @tr.EnergyPercent%</span>
+                        </div>
+                    </div>
+
+                    <div class="now-playing-stage">
+                        <div class="vinyl-wrap">
+                            <div class="vinyl-disc @(Store.Preferences.PowerOn ? "" : "paused")">
+                                <div class="vinyl-grooves"></div>
+                                @if (showCover)
+                                {
+                                    <img class="vinyl-cover"
+                                         @key="tr.Id"
+                                         src="@Engine.GetCoverUrl(tr)"
+                                         alt=""
+                                         @onerror="() => OnCoverLoadError(tr.Id)" />
+                                    <div class="vinyl-spindle"></div>
+                                }
+                            </div>
+                            @if (!showCover)
+                            {
+                                <div class="vinyl-emblem">@active.Icon</div>
+                            }
+                        </div>
+
+                        <div class="track-meta">
+                            <div class="on-air-eyebrow">
+                                <span>● СЕЙЧАС В ЭФИРЕ</span>
+                                <span>· @FormatInt(active.TotalTrackCount) треков в ротации</span>
+                            </div>
+                            <div class="track-title" title="@tr.DisplayTitle">@tr.DisplayTitle</div>
+                            <div class="track-artist" title="@tr.Artist">@tr.Artist</div>
+                            <div class="track-album" title="@tr.Album">@tr.Album</div>
+
+                            <div class="broadcast-bar-wrap" title="Эфир идёт в реальном времени одновременно на всех 11 станциях">
+                                <div class="broadcast-times">
+                                    <span>@FormatTime(active.ElapsedSec)</span>
+                                    <span class="no-scrub-hint">🔒 Прямой эфир — перемотка отключена</span>
+                                    <span>@FormatTime(active.DurationSec)</span>
+                                </div>
+                                <div class="broadcast-progress-track">
+                                    <div class="broadcast-progress-fill"
+                                         style="width: @(active.ProgressPercent.ToString("0.0", CultureInfo.InvariantCulture))%">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div style="margin: auto; text-align: center; color: var(--text-1); font-family: var(--mono); font-size: 13px;">
+                        @(_isLoadingCatalog ? "ЗАГРУЗКА КАТАЛОГА 11 РАДИОСТАНЦИЙ..." : "ОЖИДАНИЕ ПОДКЛЮЧЕНИЯ К РАДИОСЕРВЕРУ")
+                    </div>
+                }
+
+                <div class="spectrum-wrap">
+                    <canvas id="spectrumCanvas" width="900" height="46"></canvas>
+                </div>
+            </div>
+
+            <!-- CONTROLS BAR -->
+            <div class="controls-bar">
+                <div class="transport-group">
+                    <button class="btn-power @(Store.Preferences.PowerOn ? "" : "off")"
+                            @onclick="TogglePowerAsync"
+                            title="Включить / приглушить приёмник (эфир продолжает идти!) [Space]">
+                        ⏻ <span>@(Store.Preferences.PowerOn ? "В ЭФИРЕ" : "MUTE (ЭФИР ИДЁТ)")</span>
+                    </button>
+                    <button class="btn-ctrl" @onclick="() => StepFrequencyAsync(-1)" title="Предыдущая частота [←]">⏮ Волна −</button>
+                    <button class="btn-ctrl" @onclick="() => StepFrequencyAsync(1)" title="Следующая частота [→]">Волна + ⏭</button>
+                    <button class="btn-ctrl" @onclick="SkipTrackWithStaticAsync" title="Сбросить текущий трек на волне через радиопомеху">⚡ Помехи (след.)</button>
+                </div>
+
+                <div class="feedback-group">
+                    @{
+                        bool isLiked = _activeStation is not null && Engine.IsTrackLiked(_activeStation.CurrentTrack.Id);
+                    }
+                    <button class="btn-ctrl @(isLiked ? "liked" : "")"
+                            @onclick="ToggleLikeCurrentTrack"
+                            title="Повысить вес трека (2x) в ротации станции">
+                        ♥ Чаще в эфире
+                    </button>
+                    <button class="btn-ctrl"
+                            @onclick="BanCurrentTrackAsync"
+                            title="Навсегда убрать этот трек из эфира станции">
+                        ✕ В бан
+                    </button>
+                </div>
+
+                <div class="audio-group">
+                    <button class="btn-ctrl" @onclick="ToggleStaticFxAsync" title="Звук FM-шороха при переключении волн">
+                        📻 Шум: @(Store.Preferences.StaticFxEnabled ? "ВКЛ" : "ВЫКЛ")
+                    </button>
+                    <div class="vol-wrap">
+                        <span>🔊</span>
+                        <input type="range"
+                               class="vol-slider"
+                               min="0"
+                               max="100"
+                               value="@VolumePercent"
+                               @oninput="OnVolumeInputAsync" />
+                        <span>@VolumePercent%</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RECENT ON THIS FREQUENCY -->
+            <div class="history-strip">
+                <span class="history-label">Недавно на волне:</span>
+                <div class="history-items">
+                    @if (_activeStation is not null)
+                    {
+                        @foreach (var h in _activeStation.RecentHistory)
+                        {
+                            <div class="history-item">
+                                <span class="history-time">@h.MinutesAgo мин назад</span>
+                                <strong>@h.Track.Artist</strong> — @h.Track.DisplayTitle
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+        </section>
+
+        <!-- RIGHT: ALL 11 STATIONS LIVE BOARD -->
+        <aside class="stations-panel">
+            <div class="panel-head">
+                <span class="panel-title">Все @(_allStations.Count > 0 ? _allStations.Count : 11) станций (живой эфир)</span>
+                <div class="sort-tabs">
+                    <button class="sort-tab @(Store.Preferences.SortMode != "freq" ? "active" : "")"
+                            @onclick='() => SetSortMode("count")'>
+                        По базе
+                    </button>
+                    <button class="sort-tab @(Store.Preferences.SortMode == "freq" ? "active" : "")"
+                            @onclick='() => SetSortMode("freq")'>
+                        По MHz
+                    </button>
+                </div>
+            </div>
+
+            <div class="stations-list">
+                @foreach (var st in _allStations)
+                {
+                    bool isAct = string.Equals(st.Name, _activeStation?.Name, StringComparison.OrdinalIgnoreCase);
+                    <div class="st-card @(isAct ? "active" : "")"
+                         style="--st-color: @st.AccentHex"
+                         @onclick="() => TuneToStationAsync(st.Name)">
+                        <div class="st-row-1">
+                            <div class="st-title-wrap">
+                                <span class="st-freq">@st.FrequencyMhz.ToString("0.0", CultureInfo.InvariantCulture)</span>
+                                <span class="st-name">@st.Icon @st.Name</span>
+                            </div>
+                            <span class="st-count">@FormatInt(st.TotalTrackCount) тр.</span>
+                        </div>
+                        <div class="st-row-2">▶ @st.CurrentTrack.Artist — @st.CurrentTrack.DisplayTitle</div>
+                        <div class="st-mini-bar">
+                            <div class="st-mini-fill" style="width: @(st.ProgressPercent.ToString("0.0", CultureInfo.InvariantCulture))%"></div>
+                        </div>
+                    </div>
+                }
+            </div>
+        </aside>
+    </main>
+</div>
+
+<!-- GTA-INSPIRED RADIAL WHEEL OVERLAY -->
+<div class="wheel-backdrop @(_wheelOpen ? "open" : "")" @onclick="CloseWheelFromBackdrop">
+    <div class="wheel-container" @onclick:stopPropagation="true">
+        @{
+            var wheelFocus = _hoveredWheelStation ?? _activeStation;
+        }
+        <div class="wheel-center">
+            @if (wheelFocus is not null)
+            {
+                <div style="font-family: var(--mono); font-size: 13px; color: @wheelFocus.AccentHex;">
+                    @wheelFocus.FrequencyMhz.ToString("0.0", CultureInfo.InvariantCulture) FM
+                </div>
+                <div style="font-size: 20px; font-weight: 800; margin-top: 3px;">@wheelFocus.Name</div>
+                <div style="font-size: 12px; color: var(--text-1); margin-top: 8px;">
+                    @wheelFocus.CurrentTrack.Artist — @wheelFocus.CurrentTrack.DisplayTitle
+                </div>
+            }
+            <div style="font-family: var(--mono); font-size: 10.5px; color: var(--text-2); margin-top: 12px;">
+                Кликни сектор или Esc
+            </div>
+        </div>
+
+        @for (int i = 0; i < _allStations.Count; i++)
+        {
+            var st = _allStations[i];
+            double angle = (i / (double)_allStations.Count) * Math.PI * 2.0 - Math.PI / 2.0;
+            double x = 290.0 + Math.Cos(angle) * 228.0;
+            double y = 290.0 + Math.Sin(angle) * 228.0;
+            bool isAct = string.Equals(st.Name, _activeStation?.Name, StringComparison.OrdinalIgnoreCase);
+
+            <div class="wheel-node @(isAct ? "active" : "")"
+                 style="left: @(x.ToString("0.0", CultureInfo.InvariantCulture))px; top: @(y.ToString("0.0", CultureInfo.InvariantCulture))px; --node-color: @st.AccentHex;"
+                 @onmouseenter="() => _hoveredWheelStation = st"
+                 @onclick="() => SelectFromWheelAsync(st.Name)">
+                <div class="wheel-node-icon">@st.Icon</div>
+                <div class="wheel-node-freq">@st.FrequencyMhz.ToString("0.0", CultureInfo.InvariantCulture)</div>
+                <div class="wheel-node-name">@st.Name</div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private const double FreqMin = 87.5;
+    private const double FreqMax = 108.0;
+
+    private DotNetObjectReference<Home>? _dotNetRef;
+    private CancellationTokenSource? _tickCts;
+
+    private IReadOnlyList<StationLiveState> _allStations = [];
+    private StationLiveState? _activeStation;
+    private StationLiveState? _hoveredWheelStation;
+    private readonly HashSet<int> _coverFailedTrackIds = new();
+
+    private string _clockText = DateTime.Now.ToString("HH:mm:ss");
+    private string _serverUrlInput = "";
+    private string? _connectionError;
+    private bool _isOnline;
+    private bool _isLoadingCatalog;
+    private bool _wheelOpen;
+    private bool _serverPopoverOpen;
+    private bool _jsInitialized;
+    private int _lastSyncedTrackId = -1;
+    private string _lastSyncedStation = "";
+    private int _offlineRetryTicks;
+
+    private int VolumePercent => (int)Math.Round(Store.Preferences.Volume * 100.0);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _serverUrlInput = Store.Preferences.ServerBaseUrl;
+        await ReloadCatalogAsync(showSpinner: true);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("radioAudio.init", _dotNetRef);
+            _jsInitialized = true;
+
+            if (_activeStation is not null)
+            {
+                await SyncAudioAsync(staticBurstSec: 0, forceSync: true);
+            }
+
+            _tickCts = new CancellationTokenSource();
+            _ = RunSecondTickerAsync(_tickCts.Token);
+        }
+    }
+
+    private async Task RunSecondTickerAsync(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                _clockText = DateTime.Now.ToString("HH:mm:ss");
+
+                if (!Engine.IsLoaded)
+                {
+                    _offlineRetryTicks++;
+                    if (_offlineRetryTicks >= 5 && !_isLoadingCatalog)
+                    {
+                        _offlineRetryTicks = 0;
+                        await InvokeAsync(() => ReloadCatalogAsync(showSpinner: false));
+                    }
+                    else
+                    {
+                        await InvokeAsync(StateHasChanged);
+                    }
+                    continue;
+                }
+
+                await InvokeAsync(async () =>
+                {
+                    RefreshSnapshots();
+                    if (_activeStation is not null &&
+                        (_activeStation.CurrentTrack.Id != _lastSyncedTrackId ||
+                         !string.Equals(_activeStation.Name, _lastSyncedStation, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        await SyncAudioAsync(staticBurstSec: 0, forceSync: true);
+                    }
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task ReloadCatalogAsync(bool showSpinner)
+    {
+        if (_isLoadingCatalog)
+            return;
+
+        _isLoadingCatalog = true;
+        if (showSpinner)
+            StateHasChanged();
+
+        try
+        {
+            var ok = await Engine.LoadFromServerAsync(Http);
+            _isOnline = ok;
+            _connectionError = ok ? null : "Каталог станций пуст.";
+            RefreshSnapshots();
+
+            if (_jsInitialized && _activeStation is not null)
+            {
+                await SyncAudioAsync(staticBurstSec: 0, forceSync: true);
+            }
+        }
+        catch (Exception ex)
+        {
+            _isOnline = false;
+            _connectionError = ex.Message;
+        }
+        finally
+        {
+            _isLoadingCatalog = false;
+            StateHasChanged();
+        }
+    }
+
+    private void RefreshSnapshots()
+    {
+        if (!Engine.IsLoaded)
+            return;
+
+        var now = DateTimeOffset.UtcNow;
+        _allStations = Engine.GetAllStationsSnapshot(now, Store.Preferences.SortMode);
+        _activeStation = Engine.GetStationSnapshot(Store.Preferences.ActiveStationName, now)
+                         ?? _allStations.FirstOrDefault();
+    }
+
+    private async Task SyncAudioAsync(double staticBurstSec, bool forceSync = false)
+    {
+        if (!_jsInitialized || _activeStation is null)
+            return;
+
+        var tr = _activeStation.CurrentTrack;
+        if (!forceSync &&
+            tr.Id == _lastSyncedTrackId &&
+            string.Equals(_activeStation.Name, _lastSyncedStation, StringComparison.OrdinalIgnoreCase) &&
+            staticBurstSec <= 0)
+        {
+            return;
+        }
+
+        _lastSyncedTrackId = tr.Id;
+        _lastSyncedStation = _activeStation.Name;
+
+        var baseUrl = UserRadioStore.NormalizeServerUrl(Store.Preferences.ServerBaseUrl);
+        await JS.InvokeVoidAsync("radioAudio.syncBroadcast", new
+        {
+            trackId = tr.Id,
+            directUrl = $"{baseUrl}/api/stream/{tr.Id}",
+            transcodeBaseUrl = $"{baseUrl}/api/stream/{tr.Id}?transcode=1",
+            isTranscoded = tr.IsAlac,
+            targetElapsedSec = _activeStation.ElapsedSec,
+            powerOn = Store.Preferences.PowerOn,
+            volume = Store.Preferences.Volume,
+            staticFx = Store.Preferences.StaticFxEnabled,
+            accentHex = _activeStation.AccentHex,
+            bpm = tr.BpmRounded,
+            energy = tr.EnergyPercent,
+            staticBurstSec
+        });
+    }
+
+    private async Task TuneToStationAsync(string stationName)
+    {
+        if (_activeStation is not null &&
+            string.Equals(_activeStation.Name, stationName, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        Engine.SetActiveStation(stationName);
+        RefreshSnapshots();
+        await SyncAudioAsync(staticBurstSec: 0.16, forceSync: true);
+    }
+
+    private async Task StepFrequencyAsync(int dir)
+    {
+        if (!Engine.IsLoaded)
+            return;
+
+        Engine.StepStationByFrequency(Store.Preferences.ActiveStationName, dir);
+        RefreshSnapshots();
+        await SyncAudioAsync(staticBurstSec: 0.15, forceSync: true);
+    }
+
+    private async Task TogglePowerAsync()
+    {
+        Store.Preferences.PowerOn = !Store.Preferences.PowerOn;
+        Store.Save();
+        RefreshSnapshots();
+        await SyncAudioAsync(staticBurstSec: Store.Preferences.PowerOn ? 0.08 : 0.0, forceSync: true);
+    }
+
+    private async Task SkipTrackWithStaticAsync()
+    {
+        if (_activeStation is null)
+            return;
+
+        Engine.SkipCurrentTrack(_activeStation.Name, DateTimeOffset.UtcNow);
+        RefreshSnapshots();
+        await SyncAudioAsync(staticBurstSec: 0.22, forceSync: true);
+    }
+
+    private void ToggleLikeCurrentTrack()
+    {
+        if (_activeStation is null)
+            return;
+
+        Engine.ToggleLikeTrack(_activeStation.CurrentTrack.Id, _activeStation.Name, DateTimeOffset.UtcNow);
+        RefreshSnapshots();
+    }
+
+    private async Task BanCurrentTrackAsync()
+    {
+        if (_activeStation is null)
+            return;
+
+        Engine.BanTrack(_activeStation.CurrentTrack.Id, _activeStation.Name, DateTimeOffset.UtcNow);
+        RefreshSnapshots();
+        await SyncAudioAsync(staticBurstSec: 0.22, forceSync: true);
+    }
+
+    private async Task ClearBansAsync()
+    {
+        Engine.ClearBannedTracks(DateTimeOffset.UtcNow);
+        RefreshSnapshots();
+        await SyncAudioAsync(staticBurstSec: 0, forceSync: true);
+    }
+
+    private async Task ToggleStaticFxAsync()
+    {
+        Store.Preferences.StaticFxEnabled = !Store.Preferences.StaticFxEnabled;
+        Store.Save();
+        if (_jsInitialized)
+        {
+            await JS.InvokeVoidAsync(
+                "radioAudio.setVolumeOnly",
+                Store.Preferences.Volume,
+                Store.Preferences.PowerOn,
+                Store.Preferences.StaticFxEnabled);
+        }
+    }
+
+    private async Task OnVolumeInputAsync(ChangeEventArgs e)
+    {
+        if (double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var pct))
+        {
+            Store.Preferences.Volume = Math.Clamp(pct / 100.0, 0.0, 1.0);
+            Store.Save();
+            if (_jsInitialized)
+            {
+                await JS.InvokeVoidAsync(
+                    "radioAudio.setVolumeOnly",
+                    Store.Preferences.Volume,
+                    Store.Preferences.PowerOn,
+                    Store.Preferences.StaticFxEnabled);
+            }
+        }
+    }
+
+    private void SetSortMode(string mode)
+    {
+        Store.Preferences.SortMode = mode;
+        Store.Save();
+        RefreshSnapshots();
+    }
+
+    private void ToggleWheel()
+    {
+        _wheelOpen = !_wheelOpen;
+        _hoveredWheelStation = _activeStation;
+        _serverPopoverOpen = false;
+    }
+
+    private void CloseWheelFromBackdrop() => _wheelOpen = false;
+
+    private async Task SelectFromWheelAsync(string stationName)
+    {
+        _wheelOpen = false;
+        await TuneToStationAsync(stationName);
+    }
+
+    private void ToggleServerPopover()
+    {
+        _serverPopoverOpen = !_serverPopoverOpen;
+        if (_serverPopoverOpen)
+            _serverUrlInput = Store.Preferences.ServerBaseUrl;
+    }
+
+    private async Task ApplyServerUrlAsync()
+    {
+        Store.Preferences.ServerBaseUrl = UserRadioStore.NormalizeServerUrl(_serverUrlInput);
+        _serverUrlInput = Store.Preferences.ServerBaseUrl;
+        Store.Save();
+        _coverFailedTrackIds.Clear();
+        await ReloadCatalogAsync(showSpinner: true);
+        if (_isOnline)
+            _serverPopoverOpen = false;
+    }
+
+    private void OnCoverLoadError(int trackId)
+    {
+        _coverFailedTrackIds.Add(trackId);
+    }
+
+    [JSInvokable]
+    public async Task OnAudioTrackEndedAsync()
+    {
+        RefreshSnapshots();
+        await SyncAudioAsync(staticBurstSec: 0, forceSync: true);
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task OnTunerDragFrequencyAsync(double mhz)
+    {
+        if (!Engine.IsLoaded)
+            return;
+
+        var nearest = Engine.FindNearestStationByFrequency(mhz);
+        if (!string.Equals(nearest, _activeStation?.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            await TuneToStationAsync(nearest);
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnStepFrequencyAsync(int direction)
+    {
+        await StepFrequencyAsync(direction);
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task OnHotkeyAsync(string action)
+    {
+        switch (action)
+        {
+            case "wheel":
+                ToggleWheel();
+                break;
+            case "escape":
+                _wheelOpen = false;
+                _serverPopoverOpen = false;
+                break;
+            case "power":
+                await TogglePowerAsync();
+                break;
+        }
+        StateHasChanged();
+    }
+
+    private string GetLiveDotClass()
+    {
+        if (!_isOnline) return "offline";
+        return Store.Preferences.PowerOn ? "" : "muted";
+    }
+
+    private string GetServerHostLabel()
+    {
+        if (Uri.TryCreate(Store.Preferences.ServerBaseUrl, UriKind.Absolute, out var uri))
+            return $"фонотека {uri.Host}";
+        return "локальная фонотека";
+    }
+
+    private static string FreqToPctCss(double freq)
+    {
+        double pct = Math.Clamp((freq - FreqMin) / (FreqMax - FreqMin) * 100.0, 0.0, 100.0);
+        return pct.ToString("0.00", CultureInfo.InvariantCulture) + "%";
+    }
+
+    private static string FormatTime(double sec)
+    {
+        int s = Math.Max(0, (int)Math.Floor(sec));
+        int m = s / 60;
+        int r = s % 60;
+        return $"{m:D2}:{r:D2}";
+    }
+
+    private static string FormatInt(int n) =>
+        n.ToString("N0", CultureInfo.GetCultureInfo("ru-RU"));
+
+    public ValueTask DisposeAsync()
+    {
+        _tickCts?.Cancel();
+        _tickCts?.Dispose();
+        _dotNetRef?.Dispose();
+        return ValueTask.CompletedTask;
+    }
+}

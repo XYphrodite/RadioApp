@@ -1,0 +1,1693 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RadioWork FM — Прототип главной страницы</title>
+  <style>
+    :root {
+      --bg-0: #07080c;
+      --bg-1: #0e1118;
+      --bg-2: #151924;
+      --bg-card: rgba(20, 24, 35, 0.78);
+      --border: rgba(255, 255, 255, 0.08);
+      --border-hi: rgba(255, 255, 255, 0.16);
+      --text-0: #f3f5fa;
+      --text-1: #a5aec4;
+      --text-2: #667089;
+      --accent: #ff2a85;
+      --accent-2: #00f0ff;
+      --accent-glow: rgba(255, 42, 133, 0.35);
+      --mono: "JetBrains Mono", "Cascadia Mono", "Consolas", monospace;
+      --sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg-0);
+      color: var(--text-0);
+      font-family: var(--sans);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Ambient dynamic background */
+    .ambient-bg {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(circle at 22% 28%, var(--accent-glow), transparent 48%),
+        radial-gradient(circle at 82% 78%, rgba(0, 240, 255, 0.08), transparent 50%),
+        linear-gradient(180deg, #090b11 0%, #06070b 100%);
+      transition: background 0.6s ease;
+    }
+
+    .scanlines {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      background: repeating-linear-gradient(
+        to bottom,
+        rgba(255, 255, 255, 0.012) 0px,
+        rgba(255, 255, 255, 0.012) 1px,
+        transparent 1px,
+        transparent 3px
+      );
+    }
+
+    /* App Shell */
+    .app-shell {
+      position: relative;
+      z-index: 2;
+      display: grid;
+      grid-template-rows: 54px 1fr;
+      height: 100vh;
+      max-width: 1680px;
+      margin: 0 auto;
+      padding: 12px 18px 16px;
+      gap: 12px;
+    }
+
+    /* Top Bar */
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      backdrop-filter: blur(18px);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .live-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #19f086;
+      box-shadow: 0 0 10px #19f086;
+      animation: pulse 2s infinite;
+    }
+
+    .live-dot.muted {
+      background: #ff9f1c;
+      box-shadow: 0 0 8px #ff9f1c;
+      animation: none;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.45; transform: scale(0.88); }
+    }
+
+    .brand-title {
+      font-family: var(--mono);
+      font-weight: 700;
+      font-size: 14px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .brand-sub {
+      font-size: 12px;
+      color: var(--text-2);
+      padding-left: 10px;
+      border-left: 1px solid var(--border);
+    }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .stat-pill {
+      font-family: var(--mono);
+      font-size: 11.5px;
+      color: var(--text-1);
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      padding: 5px 10px;
+      border-radius: 8px;
+    }
+
+    .btn-ghost {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-family: var(--sans);
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text-0);
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-hi);
+      padding: 6px 12px;
+      border-radius: 9px;
+      cursor: pointer;
+      transition: all 0.18s ease;
+    }
+
+    .btn-ghost:hover {
+      background: rgba(255, 255, 255, 0.11);
+      border-color: var(--accent);
+    }
+
+    .kbd {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      color: var(--text-1);
+      background: rgba(0, 0, 0, 0.45);
+      border: 1px solid var(--border);
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+
+    /* Main Workspace Grid */
+    .workspace {
+      display: grid;
+      grid-template-columns: 1fr 400px;
+      gap: 14px;
+      min-height: 0;
+    }
+
+    /* Left Column: Receiver Deck */
+    .receiver-col {
+      display: grid;
+      grid-template-rows: auto 1fr auto auto;
+      gap: 12px;
+      min-height: 0;
+    }
+
+    /* Analog/Digital FM Tuner Strip */
+    .tuner-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 14px 20px 16px;
+      backdrop-filter: blur(18px);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .tuner-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-2);
+      letter-spacing: 0.08em;
+    }
+
+    .tuner-scale {
+      position: relative;
+      height: 54px;
+      background: linear-gradient(180deg, rgba(6, 8, 13, 0.9), rgba(14, 17, 26, 0.9));
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: 10px;
+      cursor: ew-resize;
+      overflow: hidden;
+    }
+
+    .tuner-ticks {
+      position: absolute;
+      inset: 0;
+    }
+
+    .tick {
+      position: absolute;
+      bottom: 0;
+      width: 1px;
+      background: rgba(255, 255, 255, 0.14);
+    }
+
+    .tick.major {
+      height: 20px;
+      background: rgba(255, 255, 255, 0.3);
+    }
+
+    .tick.minor {
+      height: 10px;
+    }
+
+    .tick-label {
+      position: absolute;
+      top: 7px;
+      transform: translateX(-50%);
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--text-2);
+    }
+
+    .station-pip {
+      position: absolute;
+      bottom: 0;
+      width: 6px;
+      height: 28px;
+      transform: translateX(-50%);
+      border-radius: 3px 3px 0 0;
+      cursor: pointer;
+      opacity: 0.65;
+      transition: all 0.2s ease;
+    }
+
+    .station-pip:hover,
+    .station-pip.active {
+      opacity: 1;
+      height: 38px;
+      filter: drop-shadow(0 0 8px currentColor);
+    }
+
+    .tuner-needle {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: var(--accent);
+      box-shadow: 0 0 12px var(--accent), 0 0 24px var(--accent);
+      transform: translateX(-50%);
+      pointer-events: none;
+      transition: left 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+      z-index: 4;
+    }
+
+    .tuner-needle::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      border-left: 6px solid transparent;
+      border-right: 6px solid transparent;
+      border-top: 7px solid var(--accent);
+    }
+
+    /* Hero Broadcast Deck */
+    .deck-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 24px 28px;
+      backdrop-filter: blur(20px);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    .deck-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .station-freq-row {
+      display: flex;
+      align-items: baseline;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .freq-big {
+      font-family: var(--mono);
+      font-size: 44px;
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: -0.03em;
+      color: var(--accent);
+      text-shadow: 0 0 28px var(--accent-glow);
+      transition: color 0.3s ease, text-shadow 0.3s ease;
+    }
+
+    .freq-unit {
+      font-family: var(--mono);
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-1);
+    }
+
+    .station-name-big {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-top: 4px;
+    }
+
+    .station-format {
+      font-size: 13.5px;
+      color: var(--text-1);
+      margin-top: 2px;
+    }
+
+    .rds-badges {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 6px;
+      max-width: 340px;
+    }
+
+    .rds-tag {
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.045);
+      border: 1px solid var(--border);
+      color: var(--text-1);
+    }
+
+    .rds-tag.hi {
+      color: var(--accent);
+      border-color: var(--accent-glow);
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    /* Center Vinyl + Now Playing */
+    .now-playing-stage {
+      display: grid;
+      grid-template-columns: 184px 1fr;
+      gap: 26px;
+      align-items: center;
+      margin: auto 0;
+      padding: 12px 0;
+    }
+
+    .vinyl-wrap {
+      position: relative;
+      width: 184px;
+      height: 184px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .vinyl-disc {
+      width: 176px;
+      height: 176px;
+      border-radius: 50%;
+      background:
+        radial-gradient(circle at center, #0b0d13 0 13%, var(--accent) 13.5% 33%, #141720 34% 36%, #0d0f16 37% 100%);
+      box-shadow:
+        0 14px 36px rgba(0, 0, 0, 0.65),
+        0 0 34px var(--accent-glow),
+        inset 0 0 0 2px rgba(255, 255, 255, 0.08);
+      position: relative;
+      animation: spin 11s linear infinite;
+    }
+
+    .vinyl-disc.paused {
+      animation-play-state: paused;
+    }
+
+    .vinyl-grooves {
+      position: absolute;
+      inset: 12px;
+      border-radius: 50%;
+      border: 1px dashed rgba(255, 255, 255, 0.07);
+    }
+
+    .vinyl-grooves::after {
+      content: "";
+      position: absolute;
+      inset: 16px;
+      border-radius: 50%;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .vinyl-emblem {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      pointer-events: none;
+      text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .track-meta {
+      min-width: 0;
+    }
+
+    .on-air-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+
+    .track-title {
+      font-size: 30px;
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .track-artist {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text-0);
+      opacity: 0.9;
+      margin-top: 5px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .track-album {
+      font-size: 13px;
+      color: var(--text-2);
+      margin-top: 4px;
+      font-family: var(--mono);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Live Non-Scrubbable Broadcast Bar */
+    .broadcast-bar-wrap {
+      margin-top: 18px;
+    }
+
+    .broadcast-times {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      color: var(--text-1);
+      margin-bottom: 6px;
+    }
+
+    .no-scrub-hint {
+      font-size: 10.5px;
+      color: var(--text-2);
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .broadcast-progress-track {
+      height: 6px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      overflow: hidden;
+      position: relative;
+      cursor: not-allowed;
+    }
+
+    .broadcast-progress-fill {
+      height: 100%;
+      width: 40%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--accent), #ffffff);
+      box-shadow: 0 0 12px var(--accent);
+      transition: width 0.35s linear;
+    }
+
+    /* Spectrum Visualizer */
+    .spectrum-wrap {
+      height: 56px;
+      margin-top: 8px;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+      padding-top: 10px;
+    }
+
+    #spectrumCanvas {
+      width: 100%;
+      height: 46px;
+      display: block;
+    }
+
+    /* Receiver Controls Bar */
+    .controls-bar {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 12px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      backdrop-filter: blur(18px);
+    }
+
+    .transport-group,
+    .feedback-group,
+    .audio-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-power {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      padding: 10px 18px;
+      border-radius: 11px;
+      font-weight: 700;
+      font-size: 13px;
+      letter-spacing: 0.03em;
+      cursor: pointer;
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: #07080c;
+      box-shadow: 0 0 22px var(--accent-glow);
+      transition: all 0.18s ease;
+    }
+
+    .btn-power.off {
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-0);
+      border-color: var(--border-hi);
+      box-shadow: none;
+    }
+
+    .btn-ctrl {
+      padding: 9px 13px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+      color: var(--text-0);
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-ctrl:hover {
+      background: rgba(255, 255, 255, 0.11);
+      border-color: var(--border-hi);
+    }
+
+    .btn-ctrl.liked {
+      color: #ff4d8d;
+      border-color: rgba(255, 77, 141, 0.5);
+      background: rgba(255, 77, 141, 0.12);
+    }
+
+    .vol-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      color: var(--text-1);
+    }
+
+    input[type="range"].vol-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 96px;
+      height: 5px;
+      border-radius: 99px;
+      background: rgba(255, 255, 255, 0.14);
+      outline: none;
+      cursor: pointer;
+    }
+
+    input[type="range"].vol-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--text-0);
+      border: 2px solid var(--accent);
+      box-shadow: 0 0 8px var(--accent);
+    }
+
+    /* Recent Airplay History Strip */
+    .history-strip {
+      background: rgba(15, 18, 27, 0.65);
+      border: 1px solid var(--border);
+      border-radius: 13px;
+      padding: 9px 16px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      overflow: hidden;
+      font-size: 12px;
+    }
+
+    .history-label {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-2);
+      white-space: nowrap;
+    }
+
+    .history-items {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      overflow: hidden;
+      flex: 1;
+    }
+
+    .history-item {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--text-1);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .history-time {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      color: var(--text-2);
+    }
+
+    /* Right Column: All 11 Live Stations */
+    .stations-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      backdrop-filter: blur(20px);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .panel-head {
+      padding: 14px 16px 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .panel-title {
+      font-size: 13.5px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+
+    .sort-tabs {
+      display: flex;
+      gap: 4px;
+      background: rgba(0, 0, 0, 0.35);
+      padding: 3px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+
+    .sort-tab {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      padding: 3px 8px;
+      border-radius: 5px;
+      border: none;
+      background: transparent;
+      color: var(--text-2);
+      cursor: pointer;
+    }
+
+    .sort-tab.active {
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--text-0);
+    }
+
+    .stations-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .stations-list::-webkit-scrollbar {
+      width: 5px;
+    }
+
+    .stations-list::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: 99px;
+    }
+
+    .st-card {
+      position: relative;
+      padding: 9px 12px 11px;
+      border-radius: 11px;
+      background: rgba(255, 255, 255, 0.025);
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all 0.16s ease;
+      overflow: hidden;
+    }
+
+    .st-card:hover {
+      background: rgba(255, 255, 255, 0.055);
+      border-color: var(--border-hi);
+    }
+
+    .st-card.active {
+      background: rgba(255, 255, 255, 0.075);
+      border-color: var(--st-color);
+      box-shadow: inset 3px 0 0 var(--st-color);
+    }
+
+    .st-row-1 {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .st-title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .st-freq {
+      font-family: var(--mono);
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--st-color);
+      min-width: 42px;
+    }
+
+    .st-name {
+      font-size: 13.5px;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .st-count {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      color: var(--text-2);
+      white-space: nowrap;
+    }
+
+    .st-row-2 {
+      margin-top: 4px;
+      font-size: 11.5px;
+      color: var(--text-1);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      padding-left: 50px;
+    }
+
+    .st-mini-bar {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 2px;
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .st-mini-fill {
+      height: 100%;
+      background: var(--st-color);
+      opacity: 0.7;
+      transition: width 0.5s linear;
+    }
+
+    /* GTA-Inspired Radial Station Wheel Modal */
+    .wheel-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      background: rgba(5, 7, 12, 0.82);
+      backdrop-filter: blur(14px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .wheel-backdrop.open {
+      display: flex;
+    }
+
+    .wheel-container {
+      position: relative;
+      width: 580px;
+      height: 580px;
+    }
+
+    .wheel-center {
+      position: absolute;
+      inset: 165px;
+      border-radius: 50%;
+      background: rgba(15, 19, 29, 0.95);
+      border: 2px solid var(--accent);
+      box-shadow: 0 0 40px var(--accent-glow);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 20px;
+    }
+
+    .wheel-node {
+      position: absolute;
+      width: 96px;
+      height: 96px;
+      margin-left: -48px;
+      margin-top: -48px;
+      border-radius: 50%;
+      background: rgba(20, 25, 38, 0.92);
+      border: 1.5px solid var(--border-hi);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 6px;
+      cursor: pointer;
+      transition: all 0.16s ease;
+    }
+
+    .wheel-node:hover,
+    .wheel-node.active {
+      transform: scale(1.13);
+      border-color: var(--node-color);
+      box-shadow: 0 0 24px var(--node-color);
+      background: rgba(28, 34, 52, 0.98);
+    }
+
+    .wheel-node-icon {
+      font-size: 20px;
+      margin-bottom: 3px;
+    }
+
+    .wheel-node-freq {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      font-weight: 700;
+      color: var(--node-color);
+    }
+
+    .wheel-node-name {
+      font-size: 10.5px;
+      font-weight: 700;
+      line-height: 1.15;
+      margin-top: 2px;
+    }
+
+    /* Static Tuning Toast */
+    .tuning-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0;
+      background: repeating-radial-gradient(circle at 50% 50%, rgba(255,255,255,0.06) 0 1px, transparent 1px 3px);
+      transition: opacity 0.14s ease;
+    }
+
+    .tuning-overlay.flash {
+      opacity: 1;
+    }
+
+    @media (max-width: 1060px) {
+      html, body { overflow: auto; }
+      .app-shell { height: auto; min-height: 100vh; }
+      .workspace { grid-template-columns: 1fr; }
+      .stations-panel { max-height: 420px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="ambient-bg" id="ambientBg"></div>
+  <div class="scanlines"></div>
+
+  <div class="app-shell">
+    <!-- TOP BAR -->
+    <header class="topbar">
+      <div class="brand">
+        <span class="live-dot" id="liveDot"></span>
+        <span class="brand-title">RadioWork // FM</span>
+        <span class="brand-sub">Прямой эфир · локальная фонотека mks68i7rtx</span>
+      </div>
+      <div class="topbar-right">
+        <span class="stat-pill">8 382 трека · 2 016 артистов · 514 ч</span>
+        <span class="stat-pill" id="clockPill">08:12:00</span>
+        <button class="btn-ghost" id="btnOpenWheel" title="Круговое меню выбора волны как в GTA">
+          ◎ Колесо станций <span class="kbd">Q</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- MAIN WORKSPACE -->
+    <main class="workspace">
+      <!-- LEFT: FM RECEIVER -->
+      <section class="receiver-col">
+        <!-- FM ANALOG/DIGITAL SCALE -->
+        <div class="tuner-box">
+          <div class="tuner-header">
+            <span>FM BAND 87.5 — 108.0 MHz · ПОТЯНИ ШКАЛУ ИЛИ КРУТИ КОЛЕСО МЫШИ</span>
+            <span id="signalReadout">SIGNAL 99% · STEREO RDS</span>
+          </div>
+          <div class="tuner-scale" id="tunerScale">
+            <div class="tuner-ticks" id="tunerTicks"></div>
+            <div class="tuner-needle" id="tunerNeedle"></div>
+          </div>
+        </div>
+
+        <!-- NOW BROADCASTING HERO -->
+        <div class="deck-card">
+          <div class="tuning-overlay" id="tuningFlash"></div>
+
+          <div class="deck-top">
+            <div>
+              <div class="station-freq-row">
+                <span class="freq-big" id="uiFreq">104.5</span>
+                <span class="freq-unit">MHz FM</span>
+              </div>
+              <div class="station-name-big" id="uiStationName">Nightdrive FM</div>
+              <div class="station-format" id="uiStationFormat">synthwave / electronic / night drive</div>
+            </div>
+
+            <div class="rds-badges">
+              <span class="rds-tag hi" id="uiGenre">Electronic / Synthwave</span>
+              <span class="rds-tag" id="uiCodec">FLAC LOSSLESS</span>
+              <span class="rds-tag" id="uiBpm">126 BPM</span>
+              <span class="rds-tag" id="uiEnergy">ENERGY 88%</span>
+            </div>
+          </div>
+
+          <div class="now-playing-stage">
+            <div class="vinyl-wrap">
+              <div class="vinyl-disc" id="vinylDisc">
+                <div class="vinyl-grooves"></div>
+              </div>
+              <div class="vinyl-emblem" id="vinylIcon">🌃</div>
+            </div>
+
+            <div class="track-meta">
+              <div class="on-air-eyebrow">
+                <span>● СЕЙЧАС В ЭФИРЕ</span>
+                <span id="uiStationCount">· 4 244 треков в ротации</span>
+              </div>
+              <div class="track-title" id="uiTrackTitle">Future Club</div>
+              <div class="track-artist" id="uiTrackArtist">Perturbator</div>
+              <div class="track-album" id="uiTrackAlbum">2014 - Dangerous Days [FLAC]</div>
+
+              <div class="broadcast-bar-wrap" title="Эфир идёт в реальном времени одновременно на всех 11 станциях">
+                <div class="broadcast-times">
+                  <span id="uiElapsed">02:14</span>
+                  <span class="no-scrub-hint">🔒 Прямой эфир — перемотка отключена</span>
+                  <span id="uiDuration">04:48</span>
+                </div>
+                <div class="broadcast-progress-track">
+                  <div class="broadcast-progress-fill" id="uiProgressFill"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="spectrum-wrap">
+            <canvas id="spectrumCanvas" width="900" height="46"></canvas>
+          </div>
+        </div>
+
+        <!-- CONTROLS BAR -->
+        <div class="controls-bar">
+          <div class="transport-group">
+            <button class="btn-power" id="btnPower" title="Включить / приглушить приёмник (эфир продолжает идти!) [Space]">
+              ⏻ <span id="powerLabel">В ЭФИРЕ</span>
+            </button>
+            <button class="btn-ctrl" id="btnPrevSt" title="Предыдущая частота [←]">⏮ Волна −</button>
+            <button class="btn-ctrl" id="btnNextSt" title="Следующая частота [→]">Волна + ⏭</button>
+            <button class="btn-ctrl" id="btnNextTrack" title="Сбросить трек через радиопомеху">⚡ Помехи (след.)</button>
+          </div>
+
+          <div class="feedback-group">
+            <button class="btn-ctrl" id="btnLike" title="Повысить вес трека в ротации станции">♥ Чаще в эфире</button>
+            <button class="btn-ctrl" id="btnBan" title="Убрать трек из эфира">✕ В бан</button>
+          </div>
+
+          <div class="audio-group">
+            <button class="btn-ctrl" id="btnStaticToggle" title="Звук радиошума при переключении волн">📻 Шум: ВКЛ</button>
+            <div class="vol-wrap">
+              <span>🔊</span>
+              <input type="range" class="vol-slider" id="volSlider" min="0" max="100" value="75" />
+              <span id="volVal">75%</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- RECENT ON THIS FREQUENCY -->
+        <div class="history-strip">
+          <span class="history-label">Недавно на волне:</span>
+          <div class="history-items" id="uiHistory"></div>
+        </div>
+      </section>
+
+      <!-- RIGHT: ALL 11 STATIONS LIVE BOARD -->
+      <aside class="stations-panel">
+        <div class="panel-head">
+          <span class="panel-title">Все 11 станций (живой эфир)</span>
+          <div class="sort-tabs">
+            <button class="sort-tab active" data-sort="count">По базе</button>
+            <button class="sort-tab" data-sort="freq">По MHz</button>
+          </div>
+        </div>
+        <div class="stations-list" id="stationsList"></div>
+      </aside>
+    </main>
+  </div>
+
+  <!-- GTA-INSPIRED RADIAL WHEEL OVERLAY -->
+  <div class="wheel-backdrop" id="wheelBackdrop">
+    <div class="wheel-container" id="wheelContainer">
+      <div class="wheel-center">
+        <div style="font-family: var(--mono); font-size: 13px; color: var(--accent);" id="whFreq">104.5 FM</div>
+        <div style="font-size: 20px; font-weight: 800; margin-top: 3px;" id="whName">Nightdrive FM</div>
+        <div style="font-size: 12px; color: var(--text-1); margin-top: 8px;" id="whTrack">Perturbator — Future Club</div>
+        <div style="font-family: var(--mono); font-size: 10.5px; color: var(--text-2); margin-top: 12px;">Кликни сектор или Esc</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Реальные 11 станций и треки из собранной аудиотеки D:\Music (8 382 трека)
+    const STATIONS = [
+      {
+        id: "nightdrive",
+        freq: 104.5,
+        name: "Nightdrive FM",
+        format: "synthwave / electronic / night drive",
+        count: 4244,
+        icon: "🌃",
+        color: "#ff2a85",
+        tracks: [
+          { artist: "Perturbator", title: "Future Club", album: "2014 - Dangerous Days [FLAC]", genre: "Electronic / Synthwave", codec: "FLAC", bpm: 126, energy: 89, dur: 288 },
+          { artist: "Lorn", title: "Acid Rain", album: "2015 -The Maze To Nowhere [FLAC]", genre: "Electronic / IDM", codec: "FLAC", bpm: 109, energy: 74, dur: 202 },
+          { artist: "Volkor X", title: "This Means War (feat. Sylvain Coudret)", album: "2016 - This Means War [FLAC]", genre: "Electronic / Synthwave", codec: "FLAC", bpm: 132, energy: 91, dur: 344 },
+          { artist: "Skrillex", title: "Leave Me Like This", album: "2023 - Quest for Fire [ALAC]", genre: "Electronic / House", codec: "ALAC", bpm: 128, energy: 93, dur: 188 },
+          { artist: "Carpenter Brut", title: "Turbo Killer", album: "2015 - EP III [FLAC]", genre: "Electronic / Darksynth", codec: "FLAC", bpm: 150, energy: 96, dur: 208 },
+          { artist: "GosT", title: "Behemoth", album: "2015 - Behemoth [FLAC]", genre: "Electronic / Slasherwave", codec: "FLAC", bpm: 122, energy: 92, dur: 256 }
+        ]
+      },
+      {
+        id: "westside",
+        freq: 88.7,
+        name: "Westside FM",
+        format: "hip-hop / rap",
+        count: 1537,
+        icon: "🌴",
+        color: "#19e68c",
+        tracks: [
+          { artist: "Snoop Dogg", title: "Lay Low (Feat. Master P, Nate Dogg)", album: "2000 - Tha Last Meal [FLAC]", genre: "Hip Hop / Gangsta", codec: "FLAC", bpm: 94, energy: 82, dur: 223 },
+          { artist: "Waka Flocka Flame", title: "Hard In Da Paint", album: "2010 - Flockaveli (Deluxe Edition)", genre: "Hip Hop / Trap", codec: "MP3 320", bpm: 144, energy: 94, dur: 246 },
+          { artist: "Ice Cube", title: "Go to Church (feat. Snoop Dogg & Lil Jon)", album: "2006 - Laugh Now, Cry Later", genre: "Hip Hop / Gangsta", codec: "AAC 256", bpm: 96, energy: 87, dur: 240 },
+          { artist: "Lil' Jon", title: "Get Low (Feat. Ying Yang Twins)", album: "2002 - Kings Of Crunk (Special Edition)", genre: "Hip Hop / Crunk", codec: "AAC 320", bpm: 101, energy: 90, dur: 334 },
+          { artist: "2Pac", title: "Until The End Of Time", album: "2001 - Until The End Of Time [ALAC]", genre: "Hip Hop / Conscious", codec: "ALAC", bpm: 98, energy: 78, dur: 267 }
+        ]
+      },
+      {
+        id: "velvet",
+        freq: 98.3,
+        name: "Velvet 98.3",
+        format: "jazz / lounge / ambient / soft",
+        count: 756,
+        icon: "🎷",
+        color: "#f4b961",
+        tracks: [
+          { artist: "Yoko Kanno", title: "Velveteen", album: "2004 - Ghost in the Shell SAC OST+ [24-96]", genre: "Jazz / Contemporary", codec: "FLAC 24/96", bpm: 84, energy: 46, dur: 312 },
+          { artist: "British Sea Power", title: "Whirling-In-Rags, 8 AM", album: "2019 - Disco Elysium (OST)", genre: "Electronic / Ambient", codec: "MP3 320", bpm: 78, energy: 38, dur: 245 },
+          { artist: "Scott Lloyd Shelly", title: "Overworld Day", album: "2011 - Terraria (OST) [FLAC]", genre: "Electronic / Chiptune", codec: "FLAC", bpm: 112, energy: 55, dur: 174 },
+          { artist: "The Ink Spots", title: "I Don't Want to Set the World on Fire", album: "2008 - Fallout 3 (Galaxy News Radio)", genre: "Jazz / Vocal", codec: "ALAC", bpm: 74, energy: 34, dur: 184 }
+        ]
+      },
+      {
+        id: "thunder",
+        freq: 92.5,
+        name: "Thunder Rock",
+        format: "classic rock / hard rock / metal",
+        count: 392,
+        icon: "⚡",
+        color: "#ff5c33",
+        tracks: [
+          { artist: "Yes", title: "Roundabout", album: "2012 - JoJo Anthology [FLAC]", genre: "Rock / Prog Rock", codec: "FLAC", bpm: 133, energy: 83, dur: 515 },
+          { artist: "Undead (Spain)", title: "Existential Horror", album: "2019 - Existential Horror", genre: "Rock / Death Metal", codec: "MP3 320", bpm: 158, energy: 97, dur: 262 },
+          { artist: "Def Leppard", title: "Photograph", album: "2013 - GTA V (Los Santos Rock Radio)", genre: "Rock / Hard Rock", codec: "MP3 320", bpm: 124, energy: 86, dur: 248 },
+          { artist: "Black Sabbath", title: "Heaven and Hell", album: "2008 - GTA IV (Liberty Rock Radio)", genre: "Rock / Heavy Metal", codec: "MP3 320", bpm: 91, energy: 84, dur: 418 }
+        ]
+      },
+      {
+        id: "drift",
+        freq: 89.1,
+        name: "Drift FM",
+        format: "phonk / drift / Memphis",
+        count: 386,
+        icon: "🏎️",
+        color: "#b44cff",
+        tracks: [
+          { artist: "plenka", title: "Nightmare", album: "2020 - Nightmare [Single]", genre: "Electronic / Drift Phonk", codec: "MP3 320", bpm: 145, energy: 93, dur: 164 },
+          { artist: "Kordhell", title: "Murder In My Mind", album: "2022 - Singles", genre: "Hip Hop / Phonk", codec: "MP3 320", bpm: 120, energy: 96, dur: 145 },
+          { artist: "Ghostface Playa", title: "Why Not", album: "2022 - Why Not [Single]", genre: "Electronic / Phonk", codec: "MP3 320", bpm: 125, energy: 92, dur: 169 },
+          { artist: "Skrillex", title: "Badders", album: "2023 - Badders (Single) [ALAC]", genre: "Electronic / Halftime", codec: "ALAC", bpm: 140, energy: 94, dur: 175 }
+        ]
+      },
+      {
+        id: "goldenera",
+        freq: 90.3,
+        name: "Golden Era FM",
+        format: "old school hip-hop / G-funk / 90s",
+        count: 346,
+        icon: "📼",
+        color: "#ffd166",
+        tracks: [
+          { artist: "2Pac", title: "Ambitionz Az A Ridah", album: "1996 - All Eyez On Me [ALAC]", genre: "Hip Hop / Gangsta", codec: "ALAC", bpm: 87, energy: 86, dur: 278 },
+          { artist: "Snoop Dogg", title: "Gin And Juice", album: "1993 - Doggystyle [FLAC]", genre: "Hip Hop / G-Funk", codec: "FLAC", bpm: 95, energy: 81, dur: 212 },
+          { artist: "Ice Cube", title: "It Was a Good Day", album: "1992 - The Predator", genre: "Hip Hop / G-Funk", codec: "AAC 256", bpm: 82, energy: 73, dur: 260 },
+          { artist: "Dr. Dre", title: "Still D.R.E. (feat. Snoop Dogg)", album: "2013 - GTA V (West Coast Classics)", genre: "Hip Hop / G-Funk", codec: "MP3 320", bpm: 93, energy: 84, dur: 270 }
+        ]
+      },
+      {
+        id: "static",
+        freq: 96.1,
+        name: "Static Radio",
+        format: "alternative / indie / punk",
+        count: 320,
+        icon: "🎸",
+        color: "#9ef01a",
+        tracks: [
+          { artist: "Undead (UK)", title: "It's Corruption", album: "1982 - It's Corruption (EP) [FLAC]", genre: "Rock / Punk", codec: "FLAC 24/96", bpm: 166, energy: 95, dur: 162 },
+          { artist: "Deftones", title: "Diamond Eyes", album: "2011 - Saints Row The Third (Generation X)", genre: "Rock / Alt Metal", codec: "MP3 320", bpm: 102, energy: 88, dur: 188 },
+          { artist: "The Cure", title: "Fascination Street", album: "2008 - GTA IV (Radio Broker)", genre: "Rock / Post-Punk", codec: "MP3 320", bpm: 120, energy: 79, dur: 316 }
+        ]
+      },
+      {
+        id: "island",
+        freq: 91.2,
+        name: "Island Radio",
+        format: "reggae / dub / chill",
+        count: 165,
+        icon: "🏝️",
+        color: "#00d4b2",
+        tracks: [
+          { artist: "Snoop Dogg", title: "Rebel Way", album: "2013 - Reincarnated (Deluxe Edition) [FLAC]", genre: "Reggae / Roots", codec: "FLAC", bpm: 79, energy: 68, dur: 284 },
+          { artist: "Damian Marley", title: "Welcome to Jamrock", album: "2008 - Saints Row 2 (Four-20)", genre: "Reggae / Dancehall", codec: "MP3 320", bpm: 76, energy: 80, dur: 213 }
+        ]
+      },
+      {
+        id: "funk",
+        freq: 99.4,
+        name: "Funk Zone",
+        format: "funk / disco / groove",
+        count: 87,
+        icon: "🪩",
+        color: "#ff70a6",
+        tracks: [
+          { artist: "Rick James", title: "Give It to Me Baby", album: "2013 - GTA V (Space 103.2)", genre: "Funk / Boogie", codec: "MP3 320", bpm: 119, energy: 85, dur: 248 },
+          { artist: "Yugo Kanno", title: "Il vento d'oro", album: "2018 - JoJo Golden Wind O.S.T [FLAC]", genre: "Funk / Jazz-Funk", codec: "FLAC", bpm: 135, energy: 92, dur: 295 }
+        ]
+      },
+      {
+        id: "country",
+        freq: 87.9,
+        name: "Country Trail",
+        format: "country / americana",
+        count: 82,
+        icon: "🤠",
+        color: "#e08e45",
+        tracks: [
+          { artist: "Marty Robbins", title: "Big Iron", album: "2010 - Fallout New Vegas (Mojave Music Radio)", genre: "Country / Western", codec: "MP3 256", bpm: 114, energy: 58, dur: 236 },
+          { artist: "Johnny Cash", title: "Ring of Fire", album: "2013 - GTA V (Rebel Radio)", genre: "Country / Classic", codec: "MP3 320", bpm: 105, energy: 64, dur: 157 }
+        ]
+      },
+      {
+        id: "soul",
+        freq: 103.9,
+        name: "Soul Wave",
+        format: "R&B / soul / slow jams",
+        count: 67,
+        icon: "💜",
+        color: "#c77dff",
+        tracks: [
+          { artist: "William DeVaughn", title: "Be Thankful", album: "2001 - Bones (OST) [FLAC]", genre: "Funk / Soul", codec: "FLAC", bpm: 98, energy: 62, dur: 342 },
+          { artist: "Marvin Gaye", title: "Inner City Blues", album: "2008 - GTA IV (The Vibe 98.8)", genre: "Funk / Soul", codec: "MP3 320", bpm: 94, energy: 59, dur: 327 }
+        ]
+      }
+    ];
+
+    // Инициализируем независимую живую шкалу эфира для КАЖДОЙ станции
+    const state = {
+      activeIdx: 0,
+      powerOn: true,
+      staticFx: true,
+      volume: 0.75,
+      sortMode: "count",
+      likedSet: new Set(),
+      live: STATIONS.map((st, idx) => ({
+        trackIdx: idx % st.tracks.length,
+        elapsed: Math.floor((idx * 47 + 93) % st.tracks[idx % st.tracks.length].dur),
+        history: [
+          { ...st.tracks[(idx + 1) % st.tracks.length], minsAgo: 4 },
+          { ...st.tracks[(idx + 2) % st.tracks.length], minsAgo: 8 }
+        ]
+      }))
+    };
+
+    // Web Audio API: синтез настоящего FM-шороха при переключении волн (0 внешних файлов)
+    let audioCtx = null;
+    function playStaticBurst(durationSec = 0.16) {
+      if (!state.staticFx || !state.powerOn) return;
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === "suspended") audioCtx.resume();
+        const bufferSize = Math.floor(audioCtx.sampleRate * durationSec);
+        const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+          const env = Math.sin((i / bufferSize) * Math.PI);
+          data[i] = (Math.random() * 2 - 1) * env * 0.22 * state.volume;
+        }
+        const noise = audioCtx.createBufferSource();
+        noise.buffer = buffer;
+        const filter = audioCtx.createBiquadFilter();
+        filter.type = "bandpass";
+        filter.frequency.value = 1900;
+        filter.Q.value = 0.9;
+        noise.connect(filter);
+        filter.connect(audioCtx.destination);
+        noise.start();
+      } catch (_) {}
+    }
+
+    function fmtTime(sec) {
+      const s = Math.max(0, Math.floor(sec));
+      const m = Math.floor(s / 60);
+      const r = s % 60;
+      return `${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
+    }
+
+    const FREQ_MIN = 87.5;
+    const FREQ_MAX = 108.0;
+    function freqToPct(freq) {
+      return ((freq - FREQ_MIN) / (FREQ_MAX - FREQ_MIN)) * 100;
+    }
+
+    // Отрисовка шкалы FM-тюнера
+    function buildTunerScale() {
+      const container = document.getElementById("tunerTicks");
+      container.innerHTML = "";
+      for (let f = 88; f <= 108; f += 0.5) {
+        const isMajor = Number.isInteger(f) && f % 2 === 0;
+        const tick = document.createElement("div");
+        tick.className = "tick " + (isMajor ? "major" : "minor");
+        tick.style.left = freqToPct(f) + "%";
+        container.appendChild(tick);
+
+        if (isMajor) {
+          const lbl = document.createElement("div");
+          lbl.className = "tick-label";
+          lbl.style.left = freqToPct(f) + "%";
+          lbl.textContent = f;
+          container.appendChild(lbl);
+        }
+      }
+
+      STATIONS.forEach((st, idx) => {
+        const pip = document.createElement("div");
+        pip.className = "station-pip";
+        pip.dataset.idx = idx;
+        pip.style.left = freqToPct(st.freq) + "%";
+        pip.style.background = st.color;
+        pip.style.color = st.color;
+        pip.title = `${st.freq.toFixed(1)} FM — ${st.name}`;
+        pip.addEventListener("click", (e) => {
+          e.stopPropagation();
+          tuneStation(idx);
+        });
+        container.appendChild(pip);
+      });
+    }
+
+    // Перетаскивание иглы тюнера по шкале
+    const tunerScale = document.getElementById("tunerScale");
+    let draggingTuner = false;
+    function tuneByClientX(clientX) {
+      const rect = tunerScale.getBoundingClientRect();
+      const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+      const targetFreq = FREQ_MIN + ratio * (FREQ_MAX - FREQ_MIN);
+      let bestIdx = 0;
+      let bestDiff = Infinity;
+      STATIONS.forEach((st, idx) => {
+        const d = Math.abs(st.freq - targetFreq);
+        if (d < bestDiff) {
+          bestDiff = d;
+          bestIdx = idx;
+        }
+      });
+      if (bestIdx !== state.activeIdx) tuneStation(bestIdx);
+    }
+    tunerScale.addEventListener("pointerdown", (e) => {
+      draggingTuner = true;
+      tunerScale.setPointerCapture(e.pointerId);
+      tuneByClientX(e.clientX);
+    });
+    tunerScale.addEventListener("pointermove", (e) => {
+      if (draggingTuner) tuneByClientX(e.clientX);
+    });
+    tunerScale.addEventListener("pointerup", () => { draggingTuner = false; });
+    tunerScale.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      stepByFrequency(e.deltaY > 0 ? 1 : -1);
+    }, { passive: false });
+
+    function stepByFrequency(dir) {
+      const sorted = STATIONS.map((s, i) => ({ freq: s.freq, i })).sort((a, b) => a.freq - b.freq);
+      const pos = sorted.findIndex((x) => x.i === state.activeIdx);
+      const nextPos = (pos + dir + sorted.length) % sorted.length;
+      tuneStation(sorted[nextPos].i);
+    }
+
+    function tuneStation(idx) {
+      if (idx === state.activeIdx) return;
+      state.activeIdx = idx;
+      playStaticBurst(0.16);
+      const flash = document.getElementById("tuningFlash");
+      flash.classList.add("flash");
+      setTimeout(() => flash.classList.remove("flash"), 150);
+      renderAll();
+    }
+
+    function renderAll() {
+      const st = STATIONS[state.activeIdx];
+      const lv = state.live[state.activeIdx];
+      const tr = st.tracks[lv.trackIdx];
+
+      // Обновляем динамический акцент темы
+      document.documentElement.style.setProperty("--accent", st.color);
+      document.documentElement.style.setProperty("--accent-glow", st.color + "52");
+
+      document.getElementById("tunerNeedle").style.left = freqToPct(st.freq) + "%";
+      document.querySelectorAll(".station-pip").forEach((el) => {
+        el.classList.toggle("active", Number(el.dataset.idx) === state.activeIdx);
+      });
+
+      document.getElementById("uiFreq").textContent = st.freq.toFixed(1);
+      document.getElementById("uiStationName").textContent = st.name;
+      document.getElementById("uiStationFormat").textContent = st.format;
+      document.getElementById("uiStationCount").textContent = `· ${st.count.toLocaleString("ru-RU")} треков в ротации`;
+      document.getElementById("vinylIcon").textContent = st.icon;
+
+      document.getElementById("uiGenre").textContent = tr.genre;
+      document.getElementById("uiCodec").textContent = tr.codec;
+      document.getElementById("uiBpm").textContent = `${tr.bpm} BPM`;
+      document.getElementById("uiEnergy").textContent = `ENERGY ${tr.energy}%`;
+
+      document.getElementById("uiTrackTitle").textContent = tr.title;
+      document.getElementById("uiTrackArtist").textContent = tr.artist;
+      document.getElementById("uiTrackAlbum").textContent = tr.album;
+
+      document.getElementById("uiElapsed").textContent = fmtTime(lv.elapsed);
+      document.getElementById("uiDuration").textContent = fmtTime(tr.dur);
+      document.getElementById("uiProgressFill").style.width = ((lv.elapsed / tr.dur) * 100).toFixed(1) + "%";
+
+      const key = `${st.id}:${tr.title}`;
+      document.getElementById("btnLike").classList.toggle("liked", state.likedSet.has(key));
+
+      // История эфира текущей волны
+      const histEl = document.getElementById("uiHistory");
+      histEl.innerHTML = lv.history
+        .map((h) => `<div class="history-item"><span class="history-time">${h.minsAgo} мин назад</span> <strong>${h.artist}</strong> — ${h.title}</div>`)
+        .join("");
+
+      renderStationsList();
+      updateWheelCenter();
+    }
+
+    function renderStationsList() {
+      const listEl = document.getElementById("stationsList");
+      const indices = STATIONS.map((_, i) => i);
+      if (state.sortMode === "freq") {
+        indices.sort((a, b) => STATIONS[a].freq - STATIONS[b].freq);
+      } else {
+        indices.sort((a, b) => STATIONS[b].count - STATIONS[a].count);
+      }
+
+      listEl.innerHTML = indices
+        .map((idx) => {
+          const st = STATIONS[idx];
+          const lv = state.live[idx];
+          const tr = st.tracks[lv.trackIdx];
+          const pct = ((lv.elapsed / tr.dur) * 100).toFixed(1);
+          const isAct = idx === state.activeIdx;
+          return `
+            <div class="st-card ${isAct ? "active" : ""}" style="--st-color: ${st.color}" data-idx="${idx}">
+              <div class="st-row-1">
+                <div class="st-title-wrap">
+                  <span class="st-freq">${st.freq.toFixed(1)}</span>
+                  <span class="st-name">${st.icon} ${st.name}</span>
+                </div>
+                <span class="st-count">${st.count.toLocaleString("ru-RU")} тр.</span>
+              </div>
+              <div class="st-row-2">▶ ${tr.artist} — ${tr.title}</div>
+              <div class="st-mini-bar"><div class="st-mini-fill" style="width:${pct}%"></div></div>
+            </div>
+          `;
+        })
+        .join("");
+
+      listEl.querySelectorAll(".st-card").forEach((card) => {
+        card.addEventListener("click", () => tuneStation(Number(card.dataset.idx)));
+      });
+    }
+
+    // Круговое колесо станций (GTA style)
+    function buildWheel() {
+      const container = document.getElementById("wheelContainer");
+      container.querySelectorAll(".wheel-node").forEach((n) => n.remove());
+      const cx = 290, cy = 290, r = 228;
+      STATIONS.forEach((st, idx) => {
+        const angle = (idx / STATIONS.length) * Math.PI * 2 - Math.PI / 2;
+        const x = cx + Math.cos(angle) * r;
+        const y = cy + Math.sin(angle) * r;
+        const node = document.createElement("div");
+        node.className = "wheel-node" + (idx === state.activeIdx ? " active" : "");
+        node.style.left = x + "px";
+        node.style.top = y + "px";
+        node.style.setProperty("--node-color", st.color);
+        node.innerHTML = `
+          <div class="wheel-node-icon">${st.icon}</div>
+          <div class="wheel-node-freq">${st.freq.toFixed(1)}</div>
+          <div class="wheel-node-name">${st.name}</div>
+        `;
+        node.addEventListener("mouseenter", () => {
+          const tr = st.tracks[state.live[idx].trackIdx];
+          document.getElementById("whFreq").textContent = `${st.freq.toFixed(1)} FM`;
+          document.getElementById("whFreq").style.color = st.color;
+          document.getElementById("whName").textContent = st.name;
+          document.getElementById("whTrack").textContent = `${tr.artist} — ${tr.title}`;
+        });
+        node.addEventListener("click", () => {
+          tuneStation(idx);
+          toggleWheel(false);
+        });
+        container.appendChild(node);
+      });
+    }
+
+    function updateWheelCenter() {
+      const st = STATIONS[state.activeIdx];
+      const tr = st.tracks[state.live[state.activeIdx].trackIdx];
+      document.getElementById("whFreq").textContent = `${st.freq.toFixed(1)} FM`;
+      document.getElementById("whFreq").style.color = st.color;
+      document.getElementById("whName").textContent = st.name;
+      document.getElementById("whTrack").textContent = `${tr.artist} — ${tr.title}`;
+    }
+
+    function toggleWheel(force) {
+      const bd = document.getElementById("wheelBackdrop");
+      const next = typeof force === "boolean" ? force : !bd.classList.contains("open");
+      if (next) buildWheel();
+      bd.classList.toggle("open", next);
+    }
+
+    // Ежесекундный ход эфира одновременно на ВСЕХ 11 радиостанциях!
+    setInterval(() => {
+      const now = new Date();
+      document.getElementById("clockPill").textContent = now.toLocaleTimeString("ru-RU");
+
+      STATIONS.forEach((st, idx) => {
+        const lv = state.live[idx];
+        const curTrack = st.tracks[lv.trackIdx];
+        lv.elapsed += 1;
+        if (lv.elapsed >= curTrack.dur) {
+          lv.history.unshift({ ...curTrack, minsAgo: 1 });
+          lv.history = lv.history.slice(0, 2);
+          lv.trackIdx = (lv.trackIdx + 1) % st.tracks.length;
+          lv.elapsed = 0;
+        }
+      });
+
+      renderAll();
+    }, 1000);
+
+    // Анимация эквалайзера (реагирует на BPM / Energy активной станции и кнопку MUTE)
+    const canvas = document.getElementById("spectrumCanvas");
+    const ctx = canvas.getContext("2d");
+    const BARS = 48;
+    const barVals = new Array(BARS).fill(0.1);
+
+    function drawSpectrum(ts) {
+      const w = canvas.width;
+      const h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+
+      const st = STATIONS[state.activeIdx];
+      const tr = st.tracks[state.live[state.activeIdx].trackIdx];
+      const beatFreq = (tr.bpm / 60) * Math.PI * 2;
+      const beatPulse = 0.65 + 0.35 * Math.abs(Math.sin((ts / 1000) * beatFreq * 0.5));
+      const energyScale = (tr.energy / 100) * state.volume;
+
+      const gap = 4;
+      const barW = (w - gap * (BARS - 1)) / BARS;
+
+      for (let i = 0; i < BARS; i++) {
+        let target = 0.05;
+        if (state.powerOn && state.volume > 0) {
+          const centerWeight = 1 - Math.abs(i - BARS * 0.32) / BARS;
+          const wave = Math.sin(ts * 0.006 + i * 0.45) * 0.5 + 0.5;
+          target = Math.min(1, (0.18 + wave * 0.65 * centerWeight) * beatPulse * energyScale + Math.random() * 0.12 * energyScale);
+        }
+        barVals[i] += (target - barVals[i]) * 0.28;
+        const bh = Math.max(3, barVals[i] * h);
+        const x = i * (barW + gap);
+        const y = h - bh;
+
+        const grad = ctx.createLinearGradient(0, h, 0, 0);
+        grad.addColorStop(0, st.color + "55");
+        grad.addColorStop(1, st.color);
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.roundRect(x, y, barW, bh, 2);
+        ctx.fill();
+      }
+      requestAnimationFrame(drawSpectrum);
+    }
+
+    // Обработчики кнопок и горячих клавиш
+    document.getElementById("btnPower").addEventListener("click", () => {
+      state.powerOn = !state.powerOn;
+      document.getElementById("btnPower").classList.toggle("off", !state.powerOn);
+      document.getElementById("powerLabel").textContent = state.powerOn ? "В ЭФИРЕ" : "MUTE (ЭФИР ИДЁТ)";
+      document.getElementById("vinylDisc").classList.toggle("paused", !state.powerOn);
+      document.getElementById("liveDot").classList.toggle("muted", !state.powerOn);
+    });
+
+    document.getElementById("btnPrevSt").addEventListener("click", () => stepByFrequency(-1));
+    document.getElementById("btnNextSt").addEventListener("click", () => stepByFrequency(1));
+
+    document.getElementById("btnNextTrack").addEventListener("click", () => {
+      const st = STATIONS[state.activeIdx];
+      const lv = state.live[state.activeIdx];
+      lv.history.unshift({ ...st.tracks[lv.trackIdx], minsAgo: 1 });
+      lv.history = lv.history.slice(0, 2);
+      lv.trackIdx = (lv.trackIdx + 1) % st.tracks.length;
+      lv.elapsed = 0;
+      playStaticBurst(0.22);
+      renderAll();
+    });
+
+    document.getElementById("btnLike").addEventListener("click", () => {
+      const st = STATIONS[state.activeIdx];
+      const tr = st.tracks[state.live[state.activeIdx].trackIdx];
+      const key = `${st.id}:${tr.title}`;
+      if (state.likedSet.has(key)) state.likedSet.delete(key);
+      else state.likedSet.add(key);
+      renderAll();
+    });
+
+    document.getElementById("btnBan").addEventListener("click", () => {
+      document.getElementById("btnNextTrack").click();
+    });
+
+    document.getElementById("btnStaticToggle").addEventListener("click", (e) => {
+      state.staticFx = !state.staticFx;
+      e.currentTarget.textContent = state.staticFx ? "📻 Шум: ВКЛ" : "📻 Шум: ВЫКЛ";
+    });
+
+    document.getElementById("volSlider").addEventListener("input", (e) => {
+      state.volume = Number(e.target.value) / 100;
+      document.getElementById("volVal").textContent = `${e.target.value}%`;
+    });
+
+    document.querySelectorAll(".sort-tab").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".sort-tab").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        state.sortMode = btn.dataset.sort;
+        renderStationsList();
+      });
+    });
+
+    document.getElementById("btnOpenWheel").addEventListener("click", () => toggleWheel(true));
+    document.getElementById("wheelBackdrop").addEventListener("click", (e) => {
+      if (e.target.id === "wheelBackdrop") toggleWheel(false);
+    });
+
+    window.addEventListener("keydown", (e) => {
+      if (e.code === "KeyQ") toggleWheel();
+      else if (e.code === "Escape") toggleWheel(false);
+      else if (e.code === "ArrowRight") stepByFrequency(1);
+      else if (e.code === "ArrowLeft") stepByFrequency(-1);
+      else if (e.code === "Space") {
+        e.preventDefault();
+        document.getElementById("btnPower").click();
+      }
+    });
+
+    buildTunerScale();
+    renderAll();
+    requestAnimationFrame(drawSpectrum);
+  </script>
+</body>
+</html>

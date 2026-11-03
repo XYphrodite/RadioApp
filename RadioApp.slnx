@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/RadioApp.Core/RadioApp.Core.csproj" />
+    <Project Path="src/RadioApp.Maui/RadioApp.Maui.csproj" />
+    <Project Path="src/RadioApp.Server/RadioApp.Server.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/RadioApp.Tests/RadioApp.Tests.csproj" />
+  </Folder>
+</Solution>
