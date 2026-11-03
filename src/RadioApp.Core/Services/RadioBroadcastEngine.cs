@@ -27,16 +27,57 @@ public sealed class RadioBroadcastEngine
     public async Task<bool> LoadFromServerAsync(HttpClient httpClient, CancellationToken ct = default)
     {
         var baseUrl = UserRadioStore.NormalizeServerUrl(_store.Preferences.ServerBaseUrl);
-        using var response = await httpClient.GetAsync($"{baseUrl}/api/stations", HttpCompletionOption.ResponseHeadersRead, ct);
-        response.EnsureSuccessStatusCode();
+        HttpResponseMessage? response = null;
+        try
+        {
+            response = await httpClient.GetAsync($"{baseUrl}/api/stations", HttpCompletionOption.ResponseHeadersRead, ct);
+            if (!response.IsSuccessStatusCode && TryResolveIpBaseUrl(baseUrl, out var ipUrl))
+            {
+                response.Dispose();
+                response = await httpClient.GetAsync($"{ipUrl}/api/stations", HttpCompletionOption.ResponseHeadersRead, ct);
+                if (response.IsSuccessStatusCode)
+                {
+                    _store.Preferences.ServerBaseUrl = ipUrl;
+                    _store.Save();
+                }
+            }
+            response.EnsureSuccessStatusCode();
 
-        await using var stream = await response.Content.ReadAsStreamAsync(ct);
-        var catalog = await JsonSerializer.DeserializeAsync<RadioCatalog>(stream, JsonOpts, ct);
-        if (catalog is null || catalog.Stations.Count == 0)
+            await using var stream = await response.Content.ReadAsStreamAsync(ct);
+            var catalog = await JsonSerializer.DeserializeAsync<RadioCatalog>(stream, JsonOpts, ct);
+            if (catalog is null || catalog.Stations.Count == 0)
+                return false;
+
+            LoadCatalog(catalog);
+            return true;
+        }
+        finally
+        {
+            response?.Dispose();
+        }
+    }
+
+    private static bool TryResolveIpBaseUrl(string baseUrl, out string ipBaseUrl)
+    {
+        ipBaseUrl = baseUrl;
+        try
+        {
+            if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri) ||
+                System.Net.IPAddress.TryParse(uri.Host, out _))
+                return false;
+
+            var ip = System.Net.Dns.GetHostAddresses(uri.Host)
+                .FirstOrDefault(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
+            if (ip is null)
+                return false;
+
+            ipBaseUrl = $"{uri.Scheme}://{ip}:{uri.Port}";
+            return true;
+        }
+        catch
+        {
             return false;
-
-        LoadCatalog(catalog);
-        return true;
+        }
     }
 
     public void LoadCatalog(RadioCatalog catalog)
