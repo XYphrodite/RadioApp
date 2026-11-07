@@ -18,7 +18,7 @@
         <ApplicationId>com.radiowork.fm</ApplicationId>
         <Version>0.2.0</Version>
         <ApplicationDisplayVersion>0.2.0</ApplicationDisplayVersion>
-        <ApplicationVersion>3</ApplicationVersion>
+        <ApplicationVersion>4</ApplicationVersion>
 
         <WindowsPackageType>None</WindowsPackageType>
 
@@ -31,7 +31,7 @@
         <MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#07080C">
             <ForegroundScale Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">0.72</ForegroundScale>
         </MauiIcon>
-        <MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#07080C" BaseSize="128,128" />
+        <MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#07080C" BaseSize="168,168" />
         <MauiImage Include="Resources\Images\*" />
         <MauiFont Include="Resources\Fonts\*" />
         <MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />

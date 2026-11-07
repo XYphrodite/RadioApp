@@ -1,4 +1,30 @@
-<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <svg width="456" height="456" viewBox="0 0 456 456" version="1.1" xmlns="http://www.w3.org/2000/svg">
-    <rect x="0" y="0" width="456" height="456" fill="#512BD4" />
+  <defs>
+    <linearGradient id="bgBase" x1="0" y1="0" x2="456" y2="456" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0B0E18" />
+      <stop offset="55%" stop-color="#07080C" />
+      <stop offset="100%" stop-color="#0A0D16" />
+    </linearGradient>
+    <radialGradient id="glowPink" cx="136" cy="148" r="240" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FF2A85" stop-opacity="0.28" />
+      <stop offset="55%" stop-color="#FF2A85" stop-opacity="0.08" />
+      <stop offset="100%" stop-color="#FF2A85" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="glowCyan" cx="324" cy="312" r="240" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00F0FF" stop-opacity="0.22" />
+      <stop offset="55%" stop-color="#00F0FF" stop-opacity="0.06" />
+      <stop offset="100%" stop-color="#00F0FF" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="centerHalo" cx="228" cy="228" r="196" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#B44CFF" stop-opacity="0.14" />
+      <stop offset="70%" stop-color="#151928" stop-opacity="0.05" />
+      <stop offset="100%" stop-color="#07080C" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <rect x="0" y="0" width="456" height="456" fill="url(#bgBase)" />
+  <rect x="0" y="0" width="456" height="456" fill="url(#glowPink)" />
+  <rect x="0" y="0" width="456" height="456" fill="url(#glowCyan)" />
+  <circle cx="228" cy="228" r="196" fill="url(#centerHalo)" />
 </svg>
