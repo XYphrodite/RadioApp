@@ -5,6 +5,7 @@
              xmlns:components="clr-namespace:RadioApp.Maui.Components"
              x:Class="RadioApp.Maui.MainPage"
              BackgroundColor="#07080C"
+             SafeAreaEdges="None"
              NavigationPage.HasNavigationBar="False">
 
     <BlazorWebView x:Name="blazorWebView"

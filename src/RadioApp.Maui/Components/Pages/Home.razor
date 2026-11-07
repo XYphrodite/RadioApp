@@ -341,23 +341,32 @@
                             title="Навсегда убрать этот трек из эфира станции">
                         ✕ В бан
                     </button>
+                    @if (IsAndroid)
+                    {
+                        <button class="btn-ctrl" @onclick="ToggleStaticFxAsync" title="Звук FM-шороха при переключении волн">
+                            📻 Шум: @(Store.Preferences.StaticFxEnabled ? "ВКЛ" : "ВЫКЛ")
+                        </button>
+                    }
                 </div>
 
-                <div class="audio-group">
-                    <button class="btn-ctrl" @onclick="ToggleStaticFxAsync" title="Звук FM-шороха при переключении волн">
-                        📻 Шум: @(Store.Preferences.StaticFxEnabled ? "ВКЛ" : "ВЫКЛ")
-                    </button>
-                    <div class="vol-wrap">
-                        <span>🔊</span>
-                        <input type="range"
-                               class="vol-slider"
-                               min="0"
-                               max="100"
-                               value="@VolumePercent"
-                               @oninput="OnVolumeInputAsync" />
-                        <span>@VolumePercent%</span>
+                @if (!IsAndroid)
+                {
+                    <div class="audio-group">
+                        <button class="btn-ctrl" @onclick="ToggleStaticFxAsync" title="Звук FM-шороха при переключении волн">
+                            📻 Шум: @(Store.Preferences.StaticFxEnabled ? "ВКЛ" : "ВЫКЛ")
+                        </button>
+                        <div class="vol-wrap">
+                            <span>🔊</span>
+                            <input type="range"
+                                   class="vol-slider"
+                                   min="0"
+                                   max="100"
+                                   value="@VolumePercent"
+                                   @oninput="OnVolumeInputAsync" />
+                            <span>@VolumePercent%</span>
+                        </div>
                     </div>
-                </div>
+                }
             </div>
 
             <!-- RECENT ON THIS FREQUENCY -->
@@ -497,6 +506,7 @@
     private int _tsPollTicks;
 
     private int VolumePercent => (int)Math.Round(Store.Preferences.Volume * 100.0);
+    private double EffectiveVolume => IsAndroid ? 1.0 : Store.Preferences.Volume;
 
     protected override Task OnInitializedAsync()
     {
@@ -896,7 +906,7 @@
             isTranscoded = tr.IsAlac,
             targetElapsedSec = _activeStation.ElapsedSec,
             powerOn = Store.Preferences.PowerOn,
-            volume = Store.Preferences.Volume,
+            volume = EffectiveVolume,
             staticFx = Store.Preferences.StaticFxEnabled,
             accentHex = _activeStation.AccentHex,
             bpm = tr.BpmRounded,
@@ -978,7 +988,7 @@
         {
             await JS.InvokeVoidAsync(
                 "radioAudio.setVolumeOnly",
-                Store.Preferences.Volume,
+                EffectiveVolume,
                 Store.Preferences.PowerOn,
                 Store.Preferences.StaticFxEnabled);
         }

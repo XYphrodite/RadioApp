@@ -21,6 +21,10 @@ public partial class MainPage : ContentPage
 #elif ANDROID
         e.WebView.SetBackgroundColor(Android.Graphics.Color.Rgb(7, 8, 12));
         e.WebView.Settings.MediaPlaybackRequiresUserGesture = false;
+        if (e.WebView.RootView is { } rootView)
+        {
+            AndroidX.Core.View.ViewCompat.RequestApplyInsets(rootView);
+        }
 #endif
     }
 }

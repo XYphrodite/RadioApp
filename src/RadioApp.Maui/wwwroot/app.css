@@ -1231,8 +1231,14 @@ input[type="range"].vol-slider::-webkit-slider-thumb {
 }
 
 @media (max-width: 1060px) {
-  html, body { overflow: auto; }
-  .app-shell { height: auto; min-height: 100vh; padding: 10px 12px 18px; }
+  html { height: 100%; overflow-x: hidden; overflow-y: auto; }
+  body { height: auto; min-height: 100%; overflow-x: hidden; overflow-y: visible; }
+  .app-shell {
+    height: auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding: calc(10px + env(safe-area-inset-top, 0px)) calc(12px + env(safe-area-inset-right, 0px)) calc(22px + env(safe-area-inset-bottom, 0px)) calc(12px + env(safe-area-inset-left, 0px));
+  }
   .workspace { grid-template-columns: 1fr; }
   .stations-panel { max-height: 440px; }
   .brand-sub, .stat-pill.hide-mobile { display: none; }
@@ -1250,7 +1256,7 @@ input[type="range"].vol-slider::-webkit-slider-thumb {
 
   .app-shell {
     grid-template-rows: 48px auto;
-    padding: 8px 10px 20px;
+    padding: calc(8px + env(safe-area-inset-top, 0px)) calc(10px + env(safe-area-inset-right, 0px)) calc(24px + env(safe-area-inset-bottom, 0px)) calc(10px + env(safe-area-inset-left, 0px));
     gap: 10px;
   }
 
@@ -1266,11 +1272,11 @@ input[type="range"].vol-slider::-webkit-slider-thumb {
 
   .server-popover {
     position: fixed;
-    top: 62px;
+    top: calc(62px + env(safe-area-inset-top, 0px));
     left: 10px;
     right: 10px;
     width: auto;
-    max-height: calc(100vh - 76px);
+    max-height: calc(100dvh - 76px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
     overflow-y: auto;
   }
 
