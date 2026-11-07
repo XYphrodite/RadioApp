@@ -234,7 +234,8 @@
                 @if (_activeStation is { } active)
                 {
                     var tr = active.CurrentTrack;
-                    bool showCover = !_coverFailedTrackIds.Contains(tr.Id);
+                    bool showCover = !_coverFailedTrackIds.Contains(tr.Id) &&
+                                     (!IsAndroid || _readyCoverTrackId == tr.Id);
 
                     <div class="deck-top">
                         <div>
@@ -263,6 +264,7 @@
                                     <img class="vinyl-cover"
                                          @key="tr.Id"
                                          src="@Engine.GetCoverUrl(tr)"
+                                         decoding="async"
                                          alt=""
                                          @onerror="() => OnCoverLoadError(tr.Id)" />
                                     <div class="vinyl-spindle"></div>
@@ -462,9 +464,11 @@
 @code {
     private const double FreqMin = 87.5;
     private const double FreqMax = 108.0;
+    private static readonly bool IsAndroid = OperatingSystem.IsAndroid();
 
     private DotNetObjectReference<Home>? _dotNetRef;
     private CancellationTokenSource? _tickCts;
+    private CancellationTokenSource? _coverDelayCts;
 
     private IReadOnlyList<StationLiveState> _allStations = [];
     private StationLiveState? _activeStation;
@@ -485,16 +489,26 @@
     private bool _jsInitialized;
     private int _lastSyncedTrackId = -1;
     private string _lastSyncedStation = "";
+    private string _lastSyncedBaseUrl = "";
+    private int _lastPreloadedTrackId = -1;
+    private int _readyCoverTrackId = -1;
+    private int _scheduledCoverTrackId = -1;
     private int _offlineRetryTicks;
     private int _tsPollTicks;
 
     private int VolumePercent => (int)Math.Round(Store.Preferences.Volume * 100.0);
 
-    protected override async Task OnInitializedAsync()
+    protected override Task OnInitializedAsync()
     {
         _serverUrlInput = Store.Preferences.ServerBaseUrl;
         _authKeyInput = Store.Preferences.TailscaleAuthKey;
         Tailscale.StateChanged += OnTailscaleStateChanged;
+
+        bool hadDiskCache = Engine.TryLoadFromDiskCache();
+        if (hadDiskCache)
+        {
+            RefreshSnapshots();
+        }
 
         if (Tailscale.IsSupported && Tailscale.HasSavedSession(Store.Preferences.TailscaleAuthKey))
         {
@@ -502,8 +516,10 @@
         }
         else
         {
-            await ReloadCatalogAsync(showSpinner: true);
+            _ = InvokeAsync(() => ReloadCatalogAsync(showSpinner: !hadDiskCache));
         }
+
+        return Task.CompletedTask;
     }
 
     private void OnTailscaleStateChanged()
@@ -522,7 +538,7 @@
             Engine.RuntimeBaseUrlOverride = fwdUrl;
         }
 
-        await InvokeAsync(() => ReloadCatalogAsync(showSpinner: true));
+        await InvokeAsync(() => ReloadCatalogAsync(showSpinner: !Engine.IsLoaded));
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -530,16 +546,66 @@
         if (firstRender)
         {
             _dotNetRef = DotNetObjectReference.Create(this);
-            await JS.InvokeVoidAsync("radioAudio.init", _dotNetRef);
+            await JS.InvokeVoidAsync("radioAudio.init", _dotNetRef, new
+            {
+                preferOpus = IsAndroid,
+                skipWebAudioCapture = IsAndroid
+            });
             _jsInitialized = true;
 
-            if (_activeStation is not null)
+            // Start playback immediately from local catalog cache if server URL is already a direct IP
+            if (_activeStation is not null &&
+                !(Tailscale.IsSupported && Tailscale.HasSavedSession(Store.Preferences.TailscaleAuthKey) && !Tailscale.IsConnected) &&
+                IsDirectIpBaseUrl(Engine.EffectiveBaseUrl))
             {
                 await SyncAudioAsync(staticBurstSec: 0, forceSync: true);
             }
 
             _tickCts = new CancellationTokenSource();
             _ = RunSecondTickerAsync(_tickCts.Token);
+        }
+    }
+
+    private static bool IsDirectIpBaseUrl(string baseUrl) =>
+        Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri) &&
+        System.Net.IPAddress.TryParse(uri.Host, out _);
+
+    private void ScheduleCoverReveal(int trackId)
+    {
+        if (!IsAndroid)
+        {
+            _readyCoverTrackId = trackId;
+            return;
+        }
+
+        if (_readyCoverTrackId == trackId || _scheduledCoverTrackId == trackId)
+            return;
+
+        _scheduledCoverTrackId = trackId;
+        _coverDelayCts?.Cancel();
+        _coverDelayCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _coverDelayCts = cts;
+
+        _ = RevealCoverAfterDelayAsync(trackId, cts.Token);
+    }
+
+    private async Task RevealCoverAfterDelayAsync(int trackId, CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(220, ct);
+            await InvokeAsync(() =>
+            {
+                if (_activeStation?.CurrentTrack.Id == trackId)
+                {
+                    _readyCoverTrackId = trackId;
+                    StateHasChanged();
+                }
+            });
+        }
+        catch (OperationCanceledException)
+        {
         }
     }
 
@@ -562,29 +628,52 @@
                     }
                 }
 
-                if (!Engine.IsLoaded)
+                if (!_isOnline)
                 {
                     _offlineRetryTicks++;
                     if (_offlineRetryTicks >= 5 && !_isLoadingCatalog && !Tailscale.IsBusy)
                     {
                         _offlineRetryTicks = 0;
-                        await InvokeAsync(() => ReloadCatalogAsync(showSpinner: false));
+                        _ = InvokeAsync(() => ReloadCatalogAsync(showSpinner: false));
                     }
-                    else
-                    {
-                        await InvokeAsync(StateHasChanged);
-                    }
+                }
+
+                if (!Engine.IsLoaded)
+                {
+                    await InvokeAsync(StateHasChanged);
                     continue;
                 }
 
                 await InvokeAsync(async () =>
                 {
                     RefreshSnapshots();
-                    if (_activeStation is not null &&
-                        (_activeStation.CurrentTrack.Id != _lastSyncedTrackId ||
-                         !string.Equals(_activeStation.Name, _lastSyncedStation, StringComparison.OrdinalIgnoreCase)))
+                    if (_activeStation is not null)
                     {
-                        await SyncAudioAsync(staticBurstSec: 0, forceSync: true);
+                        if (_isOnline &&
+                            (_activeStation.CurrentTrack.Id != _lastSyncedTrackId ||
+                             !string.Equals(_activeStation.Name, _lastSyncedStation, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            await SyncAudioAsync(staticBurstSec: 0, forceSync: true);
+                        }
+                        else if (IsAndroid &&
+                                 _isOnline &&
+                                 Store.Preferences.PowerOn &&
+                                 _activeStation.NextTrack is { } next &&
+                                 next.Id != _activeStation.CurrentTrack.Id &&
+                                 next.Id != _lastPreloadedTrackId)
+                        {
+                            double remainingSec = _activeStation.DurationSec - _activeStation.ElapsedSec;
+                            if (remainingSec is <= 9.0 and > 0.5)
+                            {
+                                _lastPreloadedTrackId = next.Id;
+                                var preloadUrl = Engine.GetStreamUrl(next, startOffsetSec: 0, preferOpus: true);
+                                await JS.InvokeVoidAsync("radioAudio.preloadNext", new
+                                {
+                                    trackId = next.Id,
+                                    streamUrl = preloadUrl
+                                });
+                            }
+                        }
                     }
                     StateHasChanged();
                 });
@@ -735,7 +824,8 @@
 
             if (_jsInitialized && _activeStation is not null)
             {
-                await SyncAudioAsync(staticBurstSec: 0, forceSync: true);
+                bool endpointChanged = !string.Equals(_lastSyncedBaseUrl, Engine.EffectiveBaseUrl, StringComparison.OrdinalIgnoreCase);
+                await SyncAudioAsync(staticBurstSec: 0, forceSync: endpointChanged || _lastSyncedTrackId < 0);
             }
         }
         catch (Exception ex)
@@ -759,6 +849,11 @@
         _allStations = Engine.GetAllStationsSnapshot(now, Store.Preferences.SortMode);
         _activeStation = Engine.GetStationSnapshot(Store.Preferences.ActiveStationName, now)
                          ?? _allStations.FirstOrDefault();
+
+        if (_activeStation is not null)
+        {
+            ScheduleCoverReveal(_activeStation.CurrentTrack.Id);
+        }
     }
 
     private async Task SyncAudioAsync(double staticBurstSec, bool forceSync = false)
@@ -767,18 +862,25 @@
             return;
 
         var tr = _activeStation.CurrentTrack;
+        var baseUrl = Engine.EffectiveBaseUrl;
         if (!forceSync &&
             tr.Id == _lastSyncedTrackId &&
             string.Equals(_activeStation.Name, _lastSyncedStation, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(baseUrl, _lastSyncedBaseUrl, StringComparison.OrdinalIgnoreCase) &&
             staticBurstSec <= 0)
         {
             return;
         }
 
+        if (tr.Id != _lastSyncedTrackId || !string.Equals(_activeStation.Name, _lastSyncedStation, StringComparison.OrdinalIgnoreCase))
+        {
+            _lastPreloadedTrackId = -1;
+        }
+
         _lastSyncedTrackId = tr.Id;
         _lastSyncedStation = _activeStation.Name;
+        _lastSyncedBaseUrl = baseUrl;
 
-        var baseUrl = Engine.EffectiveBaseUrl;
         var coverUrl = _coverFailedTrackIds.Contains(tr.Id) ? "" : Engine.GetCoverUrl(tr);
         await JS.InvokeVoidAsync("radioAudio.syncBroadcast", new
         {
@@ -789,6 +891,8 @@
             coverUrl,
             directUrl = $"{baseUrl}/api/stream/{tr.Id}",
             transcodeBaseUrl = $"{baseUrl}/api/stream/{tr.Id}?transcode=1",
+            opusBaseUrl = $"{baseUrl}/api/stream/{tr.Id}?transcode=1&format=opus",
+            preferOpus = IsAndroid,
             isTranscoded = tr.IsAlac,
             targetElapsedSec = _activeStation.ElapsedSec,
             powerOn = Store.Preferences.PowerOn,
@@ -937,6 +1041,7 @@
         Store.Preferences.ServerBaseUrl = UserRadioStore.NormalizeServerUrl(_serverUrlInput);
         _serverUrlInput = Store.Preferences.ServerBaseUrl;
         Store.Save();
+        Engine.InvalidateResolvedEndpoint();
         _coverFailedTrackIds.Clear();
 
         if (Tailscale.IsSupported && Tailscale.IsConnected)
@@ -1060,6 +1165,8 @@
     public ValueTask DisposeAsync()
     {
         Tailscale.StateChanged -= OnTailscaleStateChanged;
+        _coverDelayCts?.Cancel();
+        _coverDelayCts?.Dispose();
         _tickCts?.Cancel();
         _tickCts?.Dispose();
         _dotNetRef?.Dispose();

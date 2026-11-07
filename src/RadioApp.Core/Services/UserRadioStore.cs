@@ -48,6 +48,8 @@ public sealed class UserRadioStore
 
     private readonly Lock _sync = new();
     private readonly string _filePath;
+    private readonly string _catalogCachePath;
+    private readonly string _catalogMetaPath;
 
     public UserRadioPreferences Preferences { get; private set; } = new();
 
@@ -64,6 +66,13 @@ public sealed class UserRadioStore
                 appData = AppContext.BaseDirectory;
             _filePath = Path.Combine(appData, "RadioWork", "user_state.json");
         }
+
+        var dir = Path.GetDirectoryName(_filePath);
+        if (string.IsNullOrWhiteSpace(dir))
+            dir = AppContext.BaseDirectory;
+
+        _catalogCachePath = Path.Combine(dir, "catalog_cache.json");
+        _catalogMetaPath = Path.Combine(dir, "catalog_cache.meta");
 
         Load();
     }
@@ -110,6 +119,99 @@ public sealed class UserRadioStore
                 var json = JsonSerializer.Serialize(Preferences, JsonOpts);
                 File.WriteAllText(tmpPath, json);
                 File.Move(tmpPath, _filePath, overwrite: true);
+            }
+            catch
+            {
+                // Ignore transient disk write errors
+            }
+        }
+    }
+
+    public bool TryReadCatalogCache(out byte[] utf8Json, out string? serverUrl, out string? etag)
+    {
+        lock (_sync)
+        {
+            utf8Json = [];
+            serverUrl = null;
+            etag = null;
+
+            try
+            {
+                if (!File.Exists(_catalogCachePath))
+                    return false;
+
+                utf8Json = File.ReadAllBytes(_catalogCachePath);
+                if (utf8Json.Length < 16)
+                {
+                    utf8Json = [];
+                    return false;
+                }
+
+                if (File.Exists(_catalogMetaPath))
+                {
+                    var lines = File.ReadAllLines(_catalogMetaPath);
+                    if (lines.Length >= 1 && !string.IsNullOrWhiteSpace(lines[0]))
+                        serverUrl = NormalizeServerUrl(lines[0]);
+                    if (lines.Length >= 2 && !string.IsNullOrWhiteSpace(lines[1]))
+                        etag = lines[1].Trim();
+                }
+
+                return true;
+            }
+            catch
+            {
+                utf8Json = [];
+                return false;
+            }
+        }
+    }
+
+    public (string? ServerUrl, string? ETag) GetCachedCatalogMeta()
+    {
+        lock (_sync)
+        {
+            try
+            {
+                if (!File.Exists(_catalogMetaPath) || !File.Exists(_catalogCachePath))
+                    return (null, null);
+
+                var lines = File.ReadAllLines(_catalogMetaPath);
+                var srv = lines.Length >= 1 && !string.IsNullOrWhiteSpace(lines[0])
+                    ? NormalizeServerUrl(lines[0])
+                    : null;
+                var tag = lines.Length >= 2 && !string.IsNullOrWhiteSpace(lines[1])
+                    ? lines[1].Trim()
+                    : null;
+                return (srv, tag);
+            }
+            catch
+            {
+                return (null, null);
+            }
+        }
+    }
+
+    public void WriteCatalogCache(byte[] utf8Json, string serverUrl, string? etag)
+    {
+        if (utf8Json is null || utf8Json.Length == 0)
+            return;
+
+        lock (_sync)
+        {
+            try
+            {
+                var dir = Path.GetDirectoryName(_catalogCachePath);
+                if (!string.IsNullOrEmpty(dir))
+                    Directory.CreateDirectory(dir);
+
+                var tmpJson = _catalogCachePath + ".tmp";
+                File.WriteAllBytes(tmpJson, utf8Json);
+                File.Move(tmpJson, _catalogCachePath, overwrite: true);
+
+                var metaContent = $"{NormalizeServerUrl(serverUrl)}\n{etag?.Trim() ?? ""}";
+                var tmpMeta = _catalogMetaPath + ".tmp";
+                File.WriteAllText(tmpMeta, metaContent);
+                File.Move(tmpMeta, _catalogMetaPath, overwrite: true);
             }
             catch
             {

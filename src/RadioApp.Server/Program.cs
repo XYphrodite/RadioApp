@@ -1,6 +1,8 @@
+using System.Buffers;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO.Compression;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.ResponseCompression;
 using RadioApp.Server.Services;
 
@@ -12,7 +14,7 @@ builder.Services.AddCors(options =>
         policy.AllowAnyOrigin()
               .AllowAnyMethod()
               .AllowAnyHeader()
-              .WithExposedHeaders("Content-Range", "Accept-Ranges", "Content-Length"));
+              .WithExposedHeaders("Content-Range", "Accept-Ranges", "Content-Length", "ETag"));
 });
 
 builder.Services.AddResponseCompression(options =>
@@ -58,26 +60,46 @@ app.MapGet("/api/health", (ServerCatalogCache cache) => Results.Ok(new
 
 app.MapGet("/api/stations", (HttpContext ctx, ServerCatalogCache cache) =>
 {
-    var bytes = cache.GetSlimCatalogUtf8Bytes();
+    var acceptEncoding = ctx.Request.Headers.AcceptEncoding.ToString();
+    var (bytes, contentEncoding, etag) = cache.GetSlimCatalogPayload(acceptEncoding);
     if (bytes.Length == 0)
         return Results.Problem("Catalog is empty or stations.json was not found.", statusCode: 503);
 
     ctx.Response.Headers.CacheControl = "no-cache";
+    ctx.Response.Headers.Vary = "Accept-Encoding";
+    if (!string.IsNullOrEmpty(etag))
+    {
+        ctx.Response.Headers.ETag = etag;
+        var inm = ctx.Request.Headers.IfNoneMatch.ToString();
+        if (!string.IsNullOrEmpty(inm) && (inm == "*" || inm.Contains(etag, StringComparison.Ordinal)))
+        {
+            return Results.StatusCode(StatusCodes.Status304NotModified);
+        }
+    }
+
+    if (!string.IsNullOrEmpty(contentEncoding))
+    {
+        ctx.Response.Headers.ContentEncoding = contentEncoding;
+    }
+
     return Results.Bytes(bytes, "application/json; charset=utf-8");
 });
 
 app.MapGet("/api/stream/{id:int}", async (
     int id,
     int? transcode,
+    string? format,
     double? ss,
     HttpContext ctx,
-    ServerCatalogCache cache) =>
+    ServerCatalogCache cache,
+    ILoggerFactory loggerFactory) =>
 {
     var track = cache.GetTrack(id);
     if (track is null || !cache.IsSafeLibraryPath(track.FullPath) || !File.Exists(track.FullPath))
         return Results.NotFound();
 
-    bool shouldTranscode = transcode == 1 || track.IsAlac;
+    bool isOpus = string.Equals(format, "opus", StringComparison.OrdinalIgnoreCase);
+    bool shouldTranscode = isOpus || transcode == 1 || track.IsAlac;
     if (!shouldTranscode)
     {
         return Results.File(
@@ -86,7 +108,7 @@ app.MapGet("/api/stream/{id:int}", async (
             enableRangeProcessing: true);
     }
 
-    // Stream real-time lossless FLAC via ffmpeg (handles ALAC .m4a and seek offset ss)
+    // Stream real-time Opus 192k (mobile fast-start) or lossless FLAC via ffmpeg with server-side seek (-ss)
     double startSec = Math.Clamp(ss ?? 0.0, 0.0, Math.Max(0.0, track.DurationSec - 0.5));
     var psi = new ProcessStartInfo
     {
@@ -96,6 +118,7 @@ app.MapGet("/api/stream/{id:int}", async (
         UseShellExecute = false,
         CreateNoWindow = true
     };
+    psi.ArgumentList.Add("-nostdin");
     psi.ArgumentList.Add("-v");
     psi.ArgumentList.Add("error");
     if (startSec > 0.05)
@@ -106,36 +129,112 @@ app.MapGet("/api/stream/{id:int}", async (
     psi.ArgumentList.Add("-i");
     psi.ArgumentList.Add(track.FullPath);
     psi.ArgumentList.Add("-vn");
-    psi.ArgumentList.Add("-c:a");
-    psi.ArgumentList.Add("flac");
-    psi.ArgumentList.Add("-compression_level");
-    psi.ArgumentList.Add("2");
-    psi.ArgumentList.Add("-f");
-    psi.ArgumentList.Add("flac");
+    psi.ArgumentList.Add("-sn");
+    psi.ArgumentList.Add("-dn");
+    psi.ArgumentList.Add("-map_metadata");
+    psi.ArgumentList.Add("-1");
+
+    if (isOpus)
+    {
+        psi.ArgumentList.Add("-ac");
+        psi.ArgumentList.Add("2");
+        psi.ArgumentList.Add("-c:a");
+        psi.ArgumentList.Add("libopus");
+        psi.ArgumentList.Add("-b:a");
+        psi.ArgumentList.Add("192k");
+        psi.ArgumentList.Add("-vbr");
+        psi.ArgumentList.Add("on");
+        psi.ArgumentList.Add("-compression_level");
+        psi.ArgumentList.Add("5");
+        psi.ArgumentList.Add("-frame_duration");
+        psi.ArgumentList.Add("20");
+        psi.ArgumentList.Add("-flush_packets");
+        psi.ArgumentList.Add("1");
+        psi.ArgumentList.Add("-cluster_time_limit");
+        psi.ArgumentList.Add("200");
+        psi.ArgumentList.Add("-f");
+        psi.ArgumentList.Add("webm");
+    }
+    else
+    {
+        psi.ArgumentList.Add("-c:a");
+        psi.ArgumentList.Add("flac");
+        psi.ArgumentList.Add("-compression_level");
+        psi.ArgumentList.Add("2");
+        psi.ArgumentList.Add("-flush_packets");
+        psi.ArgumentList.Add("1");
+        psi.ArgumentList.Add("-f");
+        psi.ArgumentList.Add("flac");
+    }
     psi.ArgumentList.Add("pipe:1");
 
-    using var proc = Process.Start(psi);
-    if (proc is null)
-        return Results.StatusCode(500);
-
-    ctx.Response.StatusCode = StatusCodes.Status200OK;
-    ctx.Response.ContentType = "audio/flac";
-    ctx.Response.Headers.CacheControl = "no-store";
-
+    Process? proc;
     try
     {
-        await proc.StandardOutput.BaseStream.CopyToAsync(ctx.Response.Body, 65536, ctx.RequestAborted);
-        await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
+        proc = Process.Start(psi);
     }
-    catch (OperationCanceledException)
+    catch (Exception ex)
     {
-        // Listener switched station or muted
+        loggerFactory.CreateLogger("Stream").LogError(ex, "Failed to start ffmpeg ({Exe})", cache.FfmpegExecutable);
+        return Results.StatusCode(StatusCodes.Status500InternalServerError);
     }
-    finally
+
+    if (proc is null)
+        return Results.StatusCode(StatusCodes.Status500InternalServerError);
+
+    using (proc)
     {
-        if (!proc.HasExited)
+        var stderrTask = proc.StandardError.ReadToEndAsync();
+        var buffer = ArrayPool<byte>.Shared.Rent(16384);
+        try
         {
-            try { proc.Kill(entireProcessTree: true); } catch { }
+            var stdout = proc.StandardOutput.BaseStream;
+            int firstRead = await stdout.ReadAsync(buffer.AsMemory(0, buffer.Length), ctx.RequestAborted);
+            if (firstRead <= 0)
+            {
+                var errText = await stderrTask;
+                loggerFactory.CreateLogger("Stream").LogWarning(
+                    "ffmpeg exited with {Code} and 0 output bytes for track {Id}: {Err}",
+                    proc.HasExited ? proc.ExitCode : -1,
+                    id,
+                    errText);
+                return Results.StatusCode(StatusCodes.Status500InternalServerError);
+            }
+
+            ctx.Features.Get<IHttpResponseBodyFeature>()?.DisableBuffering();
+            ctx.Response.StatusCode = StatusCodes.Status200OK;
+            ctx.Response.ContentType = isOpus ? "audio/webm; codecs=opus" : "audio/flac";
+            ctx.Response.Headers.CacheControl = "no-store";
+            ctx.Response.Headers["X-Accel-Buffering"] = "no";
+
+            await ctx.Response.Body.WriteAsync(buffer.AsMemory(0, firstRead), ctx.RequestAborted);
+            await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
+
+            long totalSent = firstRead;
+            int read;
+            while ((read = await stdout.ReadAsync(buffer.AsMemory(0, buffer.Length), ctx.RequestAborted)) > 0)
+            {
+                await ctx.Response.Body.WriteAsync(buffer.AsMemory(0, read), ctx.RequestAborted);
+                totalSent += read;
+                if (totalSent <= 131072)
+                {
+                    await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
+                }
+            }
+
+            await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
+        }
+        catch (OperationCanceledException)
+        {
+            // Listener switched station or muted
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+            if (!proc.HasExited)
+            {
+                try { proc.Kill(entireProcessTree: true); } catch { }
+            }
         }
     }
 

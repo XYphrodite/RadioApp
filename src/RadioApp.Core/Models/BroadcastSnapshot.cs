@@ -64,7 +64,8 @@ public sealed record StationLiveState(
     RadioTrack CurrentTrack,
     double ElapsedSec,
     double DurationSec,
-    IReadOnlyList<HistoryEntry> RecentHistory)
+    IReadOnlyList<HistoryEntry> RecentHistory,
+    RadioTrack? NextTrack = null)
 {
     public double ProgressPercent => DurationSec > 0
         ? Math.Clamp(ElapsedSec / DurationSec * 100.0, 0.0, 100.0)

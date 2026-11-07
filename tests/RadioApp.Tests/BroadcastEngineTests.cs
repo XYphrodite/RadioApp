@@ -1,3 +1,6 @@
+using System.Net;
+using System.Net.Http.Headers;
+using System.Text.Json;
 using RadioApp.Core.Models;
 using RadioApp.Core.Services;
 
@@ -120,6 +123,89 @@ public sealed class BroadcastEngineTests : IDisposable
 
         Assert.NotEqual(before.CurrentTrack.Id, after.CurrentTrack.Id);
         Assert.InRange(after.ElapsedSec, 0.0, 1.0);
+    }
+
+    [Fact]
+    public void NextTrack_MatchesActualUpcomingSlotOnStation()
+    {
+        var store = new UserRadioStore(_stateFile);
+        var engine = new RadioBroadcastEngine(store);
+        engine.LoadCatalog(CreateSampleCatalog());
+
+        var now = new DateTimeOffset(2026, 11, 3, 12, 0, 0, TimeSpan.Zero);
+        var snap = engine.GetStationSnapshot("Nightdrive FM", now)!;
+        Assert.NotNull(snap.NextTrack);
+
+        double remainingSec = snap.DurationSec - snap.ElapsedSec;
+        var afterTrackEnds = engine.GetStationSnapshot("Nightdrive FM", now.AddSeconds(remainingSec + 1.0))!;
+        Assert.Equal(snap.NextTrack!.Id, afterTrackEnds.CurrentTrack.Id);
+    }
+
+    [Fact]
+    public void GetStreamUrl_PreferOpus_IncludesFormatAndOffset()
+    {
+        var store = new UserRadioStore(_stateFile);
+        store.Preferences.ServerBaseUrl = "http://192.168.1.50:5480";
+        var engine = new RadioBroadcastEngine(store);
+
+        var track = new RadioTrack { Id = 42, Filename = "01 - Track.flac", Album = "Test [FLAC]", DurationSec = 240 };
+        var url = engine.GetStreamUrl(track, startOffsetSec: 87.35, preferOpus: true);
+
+        Assert.Equal("http://192.168.1.50:5480/api/stream/42?transcode=1&format=opus&ss=87.35", url);
+    }
+
+    [Fact]
+    public async Task DiskCacheAndETag_LoadsInstantlyAndShortCircuitsOn304()
+    {
+        const string serverUrl = "http://127.0.0.1:5480";
+        const string etag = "\"abc123etag\"";
+        var catalogJson = JsonSerializer.SerializeToUtf8Bytes(CreateSampleCatalog());
+
+        int fullPayloadsServed = 0;
+        string? seenIfNoneMatch = null;
+
+        using var http = new HttpClient(new StubHttpHandler(req =>
+        {
+            seenIfNoneMatch = req.Headers.IfNoneMatch.ToString();
+            if (seenIfNoneMatch == etag)
+            {
+                return new HttpResponseMessage(HttpStatusCode.NotModified);
+            }
+
+            fullPayloadsServed++;
+            var resp = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(catalogJson)
+            };
+            resp.Headers.ETag = new EntityTagHeaderValue(etag);
+            return resp;
+        }));
+
+        // First launch: fetches 200 OK and persists disk cache + ETag
+        var store1 = new UserRadioStore(_stateFile);
+        store1.Preferences.ServerBaseUrl = serverUrl;
+        store1.Save();
+
+        var engine1 = new RadioBroadcastEngine(store1);
+        Assert.False(engine1.TryLoadFromDiskCache());
+        Assert.True(await engine1.LoadFromServerAsync(http));
+        Assert.Equal(1, fullPayloadsServed);
+
+        // Second launch: loads from disk cache immediately, then sends If-None-Match -> 304 Not Modified
+        var store2 = new UserRadioStore(_stateFile);
+        var engine2 = new RadioBroadcastEngine(store2);
+        Assert.True(engine2.TryLoadFromDiskCache());
+        Assert.True(engine2.IsLoaded);
+
+        Assert.True(await engine2.LoadFromServerAsync(http));
+        Assert.Equal(etag, seenIfNoneMatch);
+        Assert.Equal(1, fullPayloadsServed);
+    }
+
+    private sealed class StubHttpHandler(Func<HttpRequestMessage, HttpResponseMessage> responder) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(responder(request));
     }
 
     private static RadioCatalog CreateSampleCatalog()

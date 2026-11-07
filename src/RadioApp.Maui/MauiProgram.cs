@@ -36,9 +36,18 @@ public static class MauiProgram
 
         builder.Services.AddMauiBlazorWebView();
 
-        builder.Services.AddSingleton(_ => new HttpClient
+        builder.Services.AddSingleton(_ =>
         {
-            Timeout = TimeSpan.FromSeconds(20)
+            var handler = new System.Net.Http.SocketsHttpHandler
+            {
+                AutomaticDecompression = System.Net.DecompressionMethods.All,
+                ConnectTimeout = TimeSpan.FromSeconds(4),
+                PooledConnectionLifetime = TimeSpan.FromMinutes(5)
+            };
+            return new HttpClient(handler)
+            {
+                Timeout = TimeSpan.FromSeconds(15)
+            };
         });
 
         builder.Services.AddSingleton(_ =>

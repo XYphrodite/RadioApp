@@ -5,16 +5,27 @@ window.radioAudio = (() => {
 
   let dotNetRef = null;
   let audioEl = null;
+  let preloadEl = null;
+  let preloadTrackId = -1;
   let audioCtx = null;
   let analyser = null;
   let mediaSourceAttached = false;
   let freqBins = null;
   let rafId = null;
 
+  let platformPreferOpus = false;
+  let skipWebAudioCapture = false;
+
   let currentTrackId = -1;
-  let currentTranscodeMode = false;
+  let currentStreamMode = "none"; // "opus" | "transcode" | "direct"
+  let currentDirectUrl = "";
   let currentTranscodeBaseUrl = "";
+  let currentOpusBaseUrl = "";
   let streamBaseOffsetSec = 0;
+  let streamLoadStartedAt = 0;
+  let lastSwitchAt = 0;
+  let tuneDebounceTimer = null;
+  let artworkTimer = null;
 
   let vizState = {
     powerOn: true,
@@ -27,68 +38,149 @@ window.radioAudio = (() => {
 
   const barVals = new Array(BARS).fill(0.08);
   const failedDirectIds = new Set();
+  const failedOpusIds = new Set();
   const retriedNoCorsIds = new Set();
 
   function updateMediaSession(opts) {
     if (!("mediaSession" in navigator) || typeof MediaMetadata === "undefined") return;
-    try {
-      const artwork = opts.coverUrl
-        ? [{ src: opts.coverUrl, sizes: "512x512", type: "image/jpeg" }]
-        : [];
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: opts.trackTitle || "Прямой эфир",
-        artist: opts.trackArtist || "RadioWork FM",
-        album: opts.stationLabel || "RadioWork // FM",
-        artwork
-      });
-      navigator.mediaSession.playbackState = opts.powerOn ? "playing" : "paused";
-    } catch (_) {}
+    if (artworkTimer) {
+      clearTimeout(artworkTimer);
+      artworkTimer = null;
+    }
+
+    const applyMeta = (withArtwork) => {
+      try {
+        const artwork = withArtwork && opts.coverUrl
+          ? [{ src: opts.coverUrl, sizes: "360x360", type: "image/jpeg" }]
+          : [];
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: opts.trackTitle || "Прямой эфир",
+          artist: opts.trackArtist || "RadioWork FM",
+          album: opts.stationLabel || "RadioWork // FM",
+          artwork
+        });
+        navigator.mediaSession.playbackState = opts.powerOn ? "playing" : "paused";
+      } catch (_) {}
+    };
+
+    if (skipWebAudioCapture && opts.coverUrl) {
+      // Update text immediately, defer cover fetch by 250ms so audio stream wins bandwidth
+      applyMeta(false);
+      artworkTimer = setTimeout(() => {
+        artworkTimer = null;
+        if (currentTrackId === Number(opts.trackId)) {
+          applyMeta(true);
+        }
+      }, 250);
+    } else {
+      applyMeta(true);
+    }
   }
 
-  function ensureAudioElement() {
-    if (audioEl) return audioEl;
-    audioEl = new Audio();
-    audioEl.crossOrigin = "anonymous";
-    audioEl.preload = "auto";
+  function createAudioElement(forPreload = false) {
+    const el = new Audio();
+    if (!skipWebAudioCapture && !forPreload) {
+      el.crossOrigin = "anonymous";
+    }
+    el.preload = "auto";
+    bindAudioEvents(el);
+    return el;
+  }
 
-    audioEl.addEventListener("ended", () => {
+  function bindAudioEvents(el) {
+    el.addEventListener("ended", () => {
+      if (el !== audioEl) return;
       if (dotNetRef) {
         dotNetRef.invokeMethodAsync("OnAudioTrackEndedAsync").catch(() => {});
       }
     });
 
-    audioEl.addEventListener("error", () => {
-      if (currentTrackId < 0) return;
+    el.addEventListener("error", () => {
+      if (el !== audioEl || currentTrackId < 0) return;
 
-      // 1) If anonymous CORS was blocked by an intermediate proxy, retry without crossOrigin attribute
-      if (audioEl.crossOrigin && !retriedNoCorsIds.has(currentTrackId)) {
-        retriedNoCorsIds.add(currentTrackId);
-        const currentSrc = audioEl.src;
-        audioEl.removeAttribute("crossorigin");
-        audioEl.crossOrigin = null;
-        audioEl.src = currentSrc;
+      // 1) If Opus transcode failed (e.g. server without ffmpeg), fall back to direct file stream
+      if (currentStreamMode === "opus" && currentDirectUrl) {
+        failedOpusIds.add(currentTrackId);
+        currentStreamMode = "direct";
+        const target = Math.max(0, streamBaseOffsetSec);
+        streamBaseOffsetSec = 0;
+        streamLoadStartedAt = performance.now();
+        el.src = currentDirectUrl;
+        const onMeta = () => {
+          el.removeEventListener("loadedmetadata", onMeta);
+          if (el.duration && target < el.duration - 0.5) {
+            try { el.currentTime = target; } catch (_) {}
+          }
+        };
+        el.addEventListener("loadedmetadata", onMeta);
         if (vizState.powerOn) {
-          audioEl.play().catch(() => {});
+          el.play().catch(() => {});
         }
         return;
       }
 
-      // 2) Automatic fallback to server-side ffmpeg lossless FLAC stream if codec (e.g. ALAC) isn't decoded natively
-      if (!currentTranscodeMode && currentTranscodeBaseUrl) {
-        failedDirectIds.add(currentTrackId);
-        currentTranscodeMode = true;
-        const ss = Math.max(0, streamBaseOffsetSec);
-        audioEl.src = `${currentTranscodeBaseUrl}&ss=${ss.toFixed(2)}`;
+      // 2) If anonymous CORS was blocked by an intermediate proxy on desktop, retry without crossOrigin
+      if (el.crossOrigin && !mediaSourceAttached && !retriedNoCorsIds.has(currentTrackId)) {
+        retriedNoCorsIds.add(currentTrackId);
+        const currentSrc = el.src;
+        el.removeAttribute("crossorigin");
+        el.crossOrigin = null;
+        streamLoadStartedAt = performance.now();
+        el.src = currentSrc;
         if (vizState.powerOn) {
-          audioEl.play().catch(() => {});
+          el.play().catch(() => {});
+        }
+        return;
+      }
+
+      // 3) Automatic fallback to server-side ffmpeg lossless FLAC stream if codec (e.g. ALAC) isn't decoded natively
+      if (currentStreamMode === "direct" && currentTranscodeBaseUrl) {
+        failedDirectIds.add(currentTrackId);
+        currentStreamMode = "transcode";
+        const ss = Math.max(0, streamBaseOffsetSec);
+        streamLoadStartedAt = performance.now();
+        el.src = `${currentTranscodeBaseUrl}&ss=${ss.toFixed(2)}`;
+        if (vizState.powerOn) {
+          el.play().catch(() => {});
         }
       }
     });
+  }
 
+  function ensureAudioElement() {
+    if (audioEl) return audioEl;
+    audioEl = createAudioElement(false);
     return audioEl;
   }
 
-  function ensureAudioContext() {
+  function cancelPreload() {
+    preloadTrackId = -1;
+    if (!preloadEl) return;
+    try {
+      preloadEl.pause();
+      preloadEl.removeAttribute("src");
+      preloadEl.load();
+    } catch (_) {}
+  }
+
+  function preloadNext(opts) {
+    if (!opts || !vizState.powerOn || mediaSourceAttached) return;
+    const nextId = Number(opts.trackId);
+    if (nextId < 0 || nextId === currentTrackId || nextId === preloadTrackId || !opts.streamUrl) return;
+
+    cancelPreload();
+    if (!preloadEl) {
+      preloadEl = createAudioElement(true);
+    }
+    preloadTrackId = nextId;
+    preloadEl.muted = true;
+    preloadEl.volume = 0;
+    preloadEl.src = opts.streamUrl;
+    try { preloadEl.load(); } catch (_) {}
+  }
+
+  function ensureAudioContext(forStaticNoise = false) {
+    if (skipWebAudioCapture && !forStaticNoise) return;
     try {
       if (!audioCtx) {
         const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -97,7 +189,7 @@ window.radioAudio = (() => {
       if (audioCtx && audioCtx.state === "suspended") {
         audioCtx.resume().catch(() => {});
       }
-      if (audioCtx && audioCtx.state === "running" && audioEl && !mediaSourceAttached) {
+      if (!skipWebAudioCapture && audioCtx && audioCtx.state === "running" && audioEl && !mediaSourceAttached) {
         analyser = audioCtx.createAnalyser();
         analyser.fftSize = 256;
         analyser.smoothingTimeConstant = 0.78;
@@ -116,7 +208,7 @@ window.radioAudio = (() => {
   function playStaticBurst(durationSec = 0.16) {
     if (!vizState.staticFx || !vizState.powerOn || durationSec <= 0) return;
     try {
-      ensureAudioContext();
+      ensureAudioContext(true);
       if (!audioCtx) return;
       const sr = audioCtx.sampleRate;
       const len = Math.max(1, Math.floor(sr * durationSec));
@@ -145,6 +237,70 @@ window.radioAudio = (() => {
     document.documentElement.style.setProperty("--accent-glow", accentHex + "52");
   }
 
+  function startTrackStream(opts, trackId, desiredMode, targetElapsed) {
+    currentTrackId = trackId;
+    currentStreamMode = desiredMode;
+    currentDirectUrl = opts.directUrl || "";
+    currentTranscodeBaseUrl = opts.transcodeBaseUrl || "";
+    currentOpusBaseUrl = opts.opusBaseUrl || "";
+
+    updateMediaSession(opts);
+
+    // Promote preloaded standby element for zero-gap transitions on mobile
+    if (!mediaSourceAttached &&
+        preloadEl &&
+        preloadTrackId === trackId &&
+        preloadEl.readyState >= 2 &&
+        !preloadEl.error &&
+        targetElapsed < 4.5) {
+      const oldEl = audioEl;
+      audioEl = preloadEl;
+      preloadEl = oldEl;
+      preloadTrackId = -1;
+      cancelPreload();
+
+      streamBaseOffsetSec = 0;
+      streamLoadStartedAt = performance.now();
+      if (targetElapsed > 0.25) {
+        try { audioEl.currentTime = targetElapsed; } catch (_) {}
+      }
+      audioEl.volume = vizState.volume;
+      audioEl.muted = !vizState.powerOn;
+      if (vizState.powerOn) {
+        audioEl.play().catch(() => {});
+      }
+      return;
+    }
+
+    cancelPreload();
+    const audio = ensureAudioElement();
+    audio.volume = vizState.volume;
+    audio.muted = !vizState.powerOn;
+    streamLoadStartedAt = performance.now();
+
+    if (desiredMode === "opus") {
+      streamBaseOffsetSec = targetElapsed;
+      audio.src = `${currentOpusBaseUrl}&ss=${targetElapsed.toFixed(2)}`;
+    } else if (desiredMode === "transcode") {
+      streamBaseOffsetSec = targetElapsed;
+      audio.src = `${currentTranscodeBaseUrl}&ss=${targetElapsed.toFixed(2)}`;
+    } else {
+      streamBaseOffsetSec = 0;
+      audio.src = currentDirectUrl;
+      const onLoadedMeta = () => {
+        audio.removeEventListener("loadedmetadata", onLoadedMeta);
+        if (audio.duration && targetElapsed < audio.duration - 0.5) {
+          try { audio.currentTime = targetElapsed; } catch (_) {}
+        }
+      };
+      audio.addEventListener("loadedmetadata", onLoadedMeta);
+    }
+
+    if (vizState.powerOn) {
+      audio.play().catch(() => {});
+    }
+  }
+
   function syncBroadcast(opts) {
     if (!opts) return;
 
@@ -165,63 +321,76 @@ window.radioAudio = (() => {
     }
 
     const audio = ensureAudioElement();
-    ensureAudioContext();
+    ensureAudioContext(false);
 
     audio.volume = vizState.volume;
     audio.muted = !vizState.powerOn;
 
     const trackId = Number(opts.trackId);
     if (trackId < 0 || !opts.directUrl) {
+      cancelPreload();
       audio.pause();
       return;
     }
 
     const targetElapsed = Math.max(0, Number(opts.targetElapsedSec || 0));
-    const useTranscode = !!opts.isTranscoded || failedDirectIds.has(trackId);
-    currentTranscodeBaseUrl = opts.transcodeBaseUrl || "";
+    const useOpus = (!!opts.preferOpus || platformPreferOpus) && !!opts.opusBaseUrl && !failedOpusIds.has(trackId);
+    const useTranscode = !useOpus && (!!opts.isTranscoded || failedDirectIds.has(trackId));
+    const desiredMode = useOpus ? "opus" : (useTranscode ? "transcode" : "direct");
 
-    const trackChanged = trackId !== currentTrackId || useTranscode !== currentTranscodeMode;
+    const trackChanged = trackId !== currentTrackId || desiredMode !== currentStreamMode;
 
     if (trackChanged) {
-      currentTrackId = trackId;
-      currentTranscodeMode = useTranscode;
-      updateMediaSession(opts);
-
-      if (useTranscode) {
-        streamBaseOffsetSec = targetElapsed;
-        audio.src = `${currentTranscodeBaseUrl}&ss=${targetElapsed.toFixed(2)}`;
-      } else {
-        streamBaseOffsetSec = 0;
-        audio.src = opts.directUrl;
-        const onLoadedMeta = () => {
-          audio.removeEventListener("loadedmetadata", onLoadedMeta);
-          if (audio.duration && targetElapsed < audio.duration - 0.5) {
-            try { audio.currentTime = targetElapsed; } catch (_) {}
-          }
-        };
-        audio.addEventListener("loadedmetadata", onLoadedMeta);
+      if (tuneDebounceTimer) {
+        clearTimeout(tuneDebounceTimer);
+        tuneDebounceTimer = null;
       }
 
-      if (vizState.powerOn) {
-        audio.play().catch(() => {});
+      const now = performance.now();
+      const rapidSweep = (now - lastSwitchAt) < 240 && opts.staticBurstSec > 0;
+      lastSwitchAt = now;
+
+      if (rapidSweep) {
+        // Listener is dragging the FM dial or rapidly stepping stations — avoid spawning intermediate streams
+        audio.pause();
+        const switchedAt = now;
+        tuneDebounceTimer = setTimeout(() => {
+          tuneDebounceTimer = null;
+          const extraSec = Math.max(0, (performance.now() - switchedAt) / 1000);
+          startTrackStream(opts, trackId, desiredMode, targetElapsed + extraSec);
+        }, 125);
+      } else {
+        startTrackStream(opts, trackId, desiredMode, targetElapsed);
       }
       return;
     }
 
-    // Same track already loaded — keep live sync tight (especially when unmuting)
-    if (vizState.powerOn) {
-      if (useTranscode) {
+    // Same track already loaded — keep live sync tight without interrupting an in-flight buffer
+    if (vizState.powerOn && !tuneDebounceTimer) {
+      const loadingMs = performance.now() - streamLoadStartedAt;
+      const isBuffering = audio.readyState < 3 && loadingMs < 8000;
+
+      if (desiredMode === "opus" || desiredMode === "transcode") {
+        const baseUrl = desiredMode === "opus" ? currentOpusBaseUrl : currentTranscodeBaseUrl;
         const effectivePos = streamBaseOffsetSec + (audio.currentTime || 0);
-        if (Math.abs(effectivePos - targetElapsed) > 3.2 || audio.paused) {
+        if (audio.paused && loadingMs > 600) {
+          if (Math.abs(effectivePos - targetElapsed) > 4.5) {
+            streamBaseOffsetSec = targetElapsed;
+            streamLoadStartedAt = performance.now();
+            audio.src = `${baseUrl}&ss=${targetElapsed.toFixed(2)}`;
+          }
+          audio.play().catch(() => {});
+        } else if (!isBuffering && audio.readyState >= 3 && Math.abs(effectivePos - targetElapsed) > 5.5) {
           streamBaseOffsetSec = targetElapsed;
-          audio.src = `${currentTranscodeBaseUrl}&ss=${targetElapsed.toFixed(2)}`;
+          streamLoadStartedAt = performance.now();
+          audio.src = `${baseUrl}&ss=${targetElapsed.toFixed(2)}`;
           audio.play().catch(() => {});
         }
       } else {
-        if (audio.readyState >= 1 && Math.abs((audio.currentTime || 0) - targetElapsed) > 2.2) {
+        if (!isBuffering && audio.readyState >= 2 && Math.abs((audio.currentTime || 0) - targetElapsed) > 2.5) {
           try { audio.currentTime = targetElapsed; } catch (_) {}
         }
-        if (audio.paused) {
+        if (audio.paused && loadingMs > 400) {
           audio.play().catch(() => {});
         }
       }
@@ -232,6 +401,9 @@ window.radioAudio = (() => {
     vizState.volume = Math.max(0, Math.min(1, Number(vol)));
     vizState.powerOn = !!powerOn;
     vizState.staticFx = !!staticFx;
+    if (!vizState.powerOn) {
+      cancelPreload();
+    }
     if (audioEl) {
       audioEl.volume = vizState.volume;
       audioEl.muted = !vizState.powerOn;
@@ -302,8 +474,12 @@ window.radioAudio = (() => {
     rafId = requestAnimationFrame(drawSpectrum);
   }
 
-  function init(ref) {
+  function init(ref, config) {
     dotNetRef = ref;
+    if (config) {
+      platformPreferOpus = !!config.preferOpus;
+      skipWebAudioCapture = !!config.skipWebAudioCapture;
+    }
     ensureAudioElement();
 
     if ("mediaSession" in navigator && !window.__radioMediaSessionBound) {
@@ -330,7 +506,7 @@ window.radioAudio = (() => {
 
     // Unlock Web Audio graph on first interaction if platform started it suspended
     const unlock = () => {
-      ensureAudioContext();
+      ensureAudioContext(false);
       if (audioEl && vizState.powerOn && audioEl.paused && audioEl.src) {
         audioEl.play().catch(() => {});
       }
@@ -411,6 +587,7 @@ window.radioAudio = (() => {
   return {
     init,
     syncBroadcast,
+    preloadNext,
     setVolumeOnly,
     playStaticBurst
   };

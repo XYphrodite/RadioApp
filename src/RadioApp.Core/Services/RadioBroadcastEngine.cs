@@ -1,4 +1,5 @@
-using System.Net.Http.Json;
+using System.Net;
+using System.Net.Sockets;
 using System.Text.Json;
 using RadioApp.Core.Models;
 
@@ -15,6 +16,9 @@ public sealed class RadioBroadcastEngine
     private readonly UserRadioStore _store;
     private readonly Dictionary<string, StationSchedule> _schedules = new(StringComparer.OrdinalIgnoreCase);
 
+    private string? _resolvedIpBaseUrl;
+    private string? _resolvedForServerUrl;
+
     public CatalogStats Stats { get; private set; } = new(0, 0, 0);
     public bool IsLoaded => _schedules.Count > 0;
     public UserRadioPreferences Preferences => _store.Preferences;
@@ -25,72 +29,238 @@ public sealed class RadioBroadcastEngine
     /// </summary>
     public string? RuntimeBaseUrlOverride { get; set; }
 
-    public string EffectiveBaseUrl =>
-        !string.IsNullOrWhiteSpace(RuntimeBaseUrlOverride)
-            ? UserRadioStore.NormalizeServerUrl(RuntimeBaseUrlOverride)
-            : UserRadioStore.NormalizeServerUrl(_store.Preferences.ServerBaseUrl);
+    public string EffectiveBaseUrl
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(RuntimeBaseUrlOverride))
+                return UserRadioStore.NormalizeServerUrl(RuntimeBaseUrlOverride);
+
+            var configured = UserRadioStore.NormalizeServerUrl(_store.Preferences.ServerBaseUrl);
+            if (!string.IsNullOrWhiteSpace(_resolvedIpBaseUrl) &&
+                string.Equals(_resolvedForServerUrl, configured, StringComparison.OrdinalIgnoreCase))
+            {
+                return _resolvedIpBaseUrl;
+            }
+
+            return configured;
+        }
+    }
 
     public RadioBroadcastEngine(UserRadioStore store)
     {
         _store = store;
     }
 
-    public async Task<bool> LoadFromServerAsync(HttpClient httpClient, CancellationToken ct = default)
+    public void InvalidateResolvedEndpoint()
     {
-        var baseUrl = EffectiveBaseUrl;
-        HttpResponseMessage? response = null;
+        _resolvedIpBaseUrl = null;
+        _resolvedForServerUrl = null;
+    }
+
+    public bool TryLoadFromDiskCache()
+    {
+        var configured = UserRadioStore.NormalizeServerUrl(_store.Preferences.ServerBaseUrl);
+        if (!_store.TryReadCatalogCache(out var utf8Json, out var cachedServerUrl, out _))
+            return false;
+
+        if (!string.IsNullOrWhiteSpace(cachedServerUrl) &&
+            !string.Equals(cachedServerUrl, configured, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
         try
         {
-            response = await httpClient.GetAsync($"{baseUrl}/api/stations", HttpCompletionOption.ResponseHeadersRead, ct);
-            if (!response.IsSuccessStatusCode &&
-                string.IsNullOrWhiteSpace(RuntimeBaseUrlOverride) &&
-                TryResolveIpBaseUrl(baseUrl, out var ipUrl))
-            {
-                response.Dispose();
-                response = await httpClient.GetAsync($"{ipUrl}/api/stations", HttpCompletionOption.ResponseHeadersRead, ct);
-                if (response.IsSuccessStatusCode)
-                {
-                    _store.Preferences.ServerBaseUrl = ipUrl;
-                    _store.Save();
-                }
-            }
-            response.EnsureSuccessStatusCode();
-
-            await using var stream = await response.Content.ReadAsStreamAsync(ct);
-            var catalog = await JsonSerializer.DeserializeAsync<RadioCatalog>(stream, JsonOpts, ct);
+            var catalog = JsonSerializer.Deserialize<RadioCatalog>(utf8Json, JsonOpts);
             if (catalog is null || catalog.Stations.Count == 0)
                 return false;
 
             LoadCatalog(catalog);
             return true;
         }
-        finally
-        {
-            response?.Dispose();
-        }
-    }
-
-    private static bool TryResolveIpBaseUrl(string baseUrl, out string ipBaseUrl)
-    {
-        ipBaseUrl = baseUrl;
-        try
-        {
-            if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri) ||
-                System.Net.IPAddress.TryParse(uri.Host, out _))
-                return false;
-
-            var ip = System.Net.Dns.GetHostAddresses(uri.Host)
-                .FirstOrDefault(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
-            if (ip is null)
-                return false;
-
-            ipBaseUrl = $"{uri.Scheme}://{ip}:{uri.Port}";
-            return true;
-        }
         catch
         {
             return false;
         }
+    }
+
+    public async Task<bool> LoadFromServerAsync(HttpClient httpClient, CancellationToken ct = default)
+    {
+        var configuredUrl = UserRadioStore.NormalizeServerUrl(_store.Preferences.ServerBaseUrl);
+        var candidates = await BuildCandidateBaseUrlsAsync(configuredUrl, ct);
+
+        var (cachedSrv, cachedETag) = _store.GetCachedCatalogMeta();
+        string? inmTag = IsLoaded &&
+                         !string.IsNullOrWhiteSpace(cachedETag) &&
+                         string.Equals(cachedSrv, configuredUrl, StringComparison.OrdinalIgnoreCase)
+            ? cachedETag
+            : null;
+
+        Exception? lastError = null;
+
+        for (int i = 0; i < candidates.Count; i++)
+        {
+            var candidateUrl = candidates[i];
+            bool hasMoreCandidates = i < candidates.Count - 1;
+
+            using var attemptCts = hasMoreCandidates
+                ? CancellationTokenSource.CreateLinkedTokenSource(ct)
+                : null;
+            attemptCts?.CancelAfter(TimeSpan.FromSeconds(4));
+            var attemptToken = attemptCts?.Token ?? ct;
+
+            HttpResponseMessage? response = null;
+            try
+            {
+                using var req = new HttpRequestMessage(HttpMethod.Get, $"{candidateUrl}/api/stations");
+                if (!string.IsNullOrEmpty(inmTag))
+                {
+                    req.Headers.TryAddWithoutValidation("If-None-Match", inmTag);
+                }
+
+                response = await httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, attemptToken);
+                if (response.StatusCode == HttpStatusCode.NotModified && IsLoaded)
+                {
+                    RememberWorkingEndpoint(configuredUrl, candidateUrl);
+                    return true;
+                }
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    response.EnsureSuccessStatusCode();
+                }
+
+                var bytes = await response.Content.ReadAsByteArrayAsync(ct);
+                var catalog = JsonSerializer.Deserialize<RadioCatalog>(bytes, JsonOpts);
+                if (catalog is null || catalog.Stations.Count == 0)
+                    return false;
+
+                RememberWorkingEndpoint(configuredUrl, candidateUrl);
+                LoadCatalog(catalog);
+                _store.WriteCatalogCache(bytes, configuredUrl, response.Headers.ETag?.Tag);
+                return true;
+            }
+            catch (Exception ex) when (hasMoreCandidates && !ct.IsCancellationRequested)
+            {
+                lastError = ex;
+            }
+            finally
+            {
+                response?.Dispose();
+            }
+        }
+
+        if (lastError is not null)
+            throw lastError;
+
+        return false;
+    }
+
+    private void RememberWorkingEndpoint(string configuredUrl, string workingUrl)
+    {
+        if (!string.IsNullOrWhiteSpace(RuntimeBaseUrlOverride))
+            return;
+
+        if (!string.Equals(configuredUrl, workingUrl, StringComparison.OrdinalIgnoreCase))
+        {
+            _resolvedForServerUrl = configuredUrl;
+            _resolvedIpBaseUrl = workingUrl;
+        }
+        else
+        {
+            _resolvedForServerUrl = configuredUrl;
+            _resolvedIpBaseUrl = null;
+        }
+    }
+
+    private async Task<List<string>> BuildCandidateBaseUrlsAsync(string configuredUrl, CancellationToken ct)
+    {
+        if (!string.IsNullOrWhiteSpace(RuntimeBaseUrlOverride))
+            return [UserRadioStore.NormalizeServerUrl(RuntimeBaseUrlOverride)];
+
+        var list = new List<string>(4);
+
+        if (!string.IsNullOrWhiteSpace(_resolvedIpBaseUrl) &&
+            string.Equals(_resolvedForServerUrl, configuredUrl, StringComparison.OrdinalIgnoreCase))
+        {
+            list.Add(_resolvedIpBaseUrl);
+        }
+
+        if (ShouldResolveToDirectIpv4(configuredUrl, out var uri))
+        {
+            try
+            {
+                using var dnsCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                dnsCts.CancelAfter(TimeSpan.FromMilliseconds(1500));
+                var addrs = await Dns.GetHostAddressesAsync(uri.Host, AddressFamily.InterNetwork, dnsCts.Token);
+                foreach (var ip in addrs.OrderBy(RankIpv4Preference))
+                {
+                    var ipUrl = $"{uri.Scheme}://{ip}:{uri.Port}";
+                    if (!list.Contains(ipUrl, StringComparer.OrdinalIgnoreCase))
+                        list.Add(ipUrl);
+                }
+            }
+            catch
+            {
+                // Fall back to configuredUrl
+            }
+        }
+
+        if (!list.Contains(configuredUrl, StringComparer.OrdinalIgnoreCase))
+            list.Add(configuredUrl);
+
+        return list;
+    }
+
+    private static bool ShouldResolveToDirectIpv4(string baseUrl, out Uri uri)
+    {
+        uri = null!;
+        if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var parsed) ||
+            IPAddress.TryParse(parsed.Host, out _))
+        {
+            return false;
+        }
+
+        var host = parsed.Host;
+        if (string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        // Resolve single-label LAN/MagicDNS names (e.g. mks68i7rtx) and local/Tailscale suffixes to IPv4
+        // so Android WebView <audio> & <img> skip slow mDNS/DoT/IPv6 hostname lookups.
+        bool isLocalOrTailnet = !host.Contains('.') ||
+                                host.EndsWith(".ts.net", StringComparison.OrdinalIgnoreCase) ||
+                                host.EndsWith(".local", StringComparison.OrdinalIgnoreCase) ||
+                                host.EndsWith(".lan", StringComparison.OrdinalIgnoreCase) ||
+                                host.EndsWith(".home", StringComparison.OrdinalIgnoreCase) ||
+                                host.EndsWith(".internal", StringComparison.OrdinalIgnoreCase);
+
+        if (!isLocalOrTailnet)
+            return false;
+
+        uri = parsed;
+        return true;
+    }
+
+    private static int RankIpv4Preference(IPAddress ip)
+    {
+        var b = ip.GetAddressBytes();
+        if (b.Length != 4)
+            return 50;
+
+        // 1) Home / Private LAN (192.168.0.0/16, 10.0.0.0/8) — fastest direct Wi-Fi
+        if ((b[0] == 192 && b[1] == 168) || b[0] == 10)
+            return 0;
+
+        // 2) Tailscale CGNAT (100.64.0.0/10)
+        if (b[0] == 100 && b[1] >= 64 && b[1] <= 127)
+            return 1;
+
+        // 3) Public / other IPv4
+        if (b[0] == 172 && b[1] >= 16 && b[1] <= 31)
+            return 3; // Often WSL / Hyper-V / Docker virtual switch on Windows hosts
+
+        return 2;
     }
 
     public void LoadCatalog(RadioCatalog catalog)
@@ -385,9 +555,14 @@ public sealed class RadioBroadcastEngine
         }
     }
 
-    public string GetStreamUrl(RadioTrack track, bool forceTranscode = false, double startOffsetSec = 0)
+    public string GetStreamUrl(RadioTrack track, bool forceTranscode = false, double startOffsetSec = 0, bool preferOpus = false)
     {
         var baseUrl = EffectiveBaseUrl;
+        if (preferOpus)
+        {
+            var ss = Math.Max(0, startOffsetSec).ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+            return $"{baseUrl}/api/stream/{track.Id}?transcode=1&format=opus&ss={ss}";
+        }
         if (forceTranscode || track.IsAlac)
         {
             var ss = Math.Max(0, startOffsetSec).ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
@@ -428,6 +603,9 @@ public sealed class RadioBroadcastEngine
     private StationLiveState ComputeLiveStateUnlocked(StationSchedule schedule, DateTimeOffset utcNow)
     {
         var (currentTrack, slotIdx, elapsedSec) = LocateSlotUnlocked(schedule, utcNow);
+        var nextTrack = schedule.Slots.Count > 0
+            ? schedule.Slots[(slotIdx + 1) % schedule.Slots.Count]
+            : null;
 
         // Compute recent 2 aired tracks before slotIdx
         var history = new List<HistoryEntry>(2);
@@ -453,7 +631,8 @@ public sealed class RadioBroadcastEngine
             CurrentTrack: currentTrack,
             ElapsedSec: elapsedSec,
             DurationSec: currentTrack.EffectiveDurationSec,
-            RecentHistory: history);
+            RecentHistory: history,
+            NextTrack: nextTrack);
     }
 
     private (RadioTrack Track, int SlotIndex, double ElapsedSec) LocateSlotUnlocked(StationSchedule schedule, DateTimeOffset utcNow)
