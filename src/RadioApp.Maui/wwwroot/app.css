@@ -432,7 +432,10 @@ html, body {
 
 .tuner-ticks {
   position: absolute;
-  inset: 0;
+  top: 0;
+  bottom: 0;
+  left: 14px;
+  right: 14px;
 }
 
 .tick {
@@ -853,7 +856,7 @@ html, body {
 .btn-power {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   padding: 10px 18px;
   border-radius: 11px;
   font-weight: 700;
@@ -865,6 +868,12 @@ html, body {
   color: #07080c;
   box-shadow: 0 0 22px var(--accent-glow);
   transition: all 0.18s ease;
+}
+
+.power-ico {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
 }
 
 .btn-power.off {
@@ -1388,5 +1397,190 @@ input[type="range"].vol-slider::-webkit-slider-thumb {
 @media (max-width: 375px) {
   .wheel-container {
     transform: scale(0.53);
+  }
+}
+
+/* Touch devices: hide desktop keyboard shortcut badges */
+@media (hover: none) and (pointer: coarse) {
+  .kbd { display: none !important; }
+}
+
+/* Mobile Landscape: 2-column single-screen cockpit + fitted radial wheel */
+@media (max-height: 520px) and (orientation: landscape) {
+  html, body {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .app-shell {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    grid-template-rows: 38px 1fr;
+    padding: calc(6px + env(safe-area-inset-top, 0px)) calc(10px + env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) calc(10px + env(safe-area-inset-left, 0px));
+    gap: 7px;
+  }
+
+  .topbar {
+    padding: 0 12px;
+    border-radius: 10px;
+  }
+
+  .brand-title { font-size: 12.5px; }
+  .brand-sub, .stat-pill { display: none !important; }
+  .btn-ghost { padding: 4px 10px; font-size: 11.5px; }
+
+  .server-popover {
+    position: fixed;
+    top: calc(46px + env(safe-area-inset-top, 0px));
+    right: calc(10px + env(safe-area-inset-right, 0px));
+    left: auto;
+    width: min(370px, calc(100vw - 24px));
+    max-height: calc(100dvh - 54px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    overflow-y: auto;
+    padding: 11px 13px;
+    gap: 8px;
+  }
+
+  .workspace {
+    grid-template-columns: minmax(0, 1.38fr) minmax(240px, 0.92fr);
+    gap: 9px;
+    min-height: 0;
+  }
+
+  .receiver-col {
+    grid-template-rows: auto 1fr auto;
+    gap: 7px;
+    min-height: 0;
+  }
+
+  .history-strip,
+  .spectrum-wrap {
+    display: none;
+  }
+
+  .tuner-box {
+    padding: 6px 12px 7px;
+    border-radius: 11px;
+  }
+
+  .tuner-header {
+    font-size: 9.5px;
+    margin-bottom: 4px;
+  }
+
+  .tuner-scale { height: 32px; border-radius: 8px; }
+  .tick.major { height: 12px; }
+  .tick.minor { height: 6px; }
+  .tick-label { top: 2px; font-size: 8.5px; }
+  .station-pip { height: 16px; width: 5px; }
+  .station-pip.active { height: 22px; }
+
+  .deck-card {
+    padding: 9px 13px;
+    border-radius: 13px;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .deck-top {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .station-freq-row { gap: 7px; align-items: baseline; }
+  .freq-big { font-size: 22px; }
+  .freq-unit { font-size: 11px; }
+  .station-name-big { font-size: 15px; margin-top: 1px; }
+  .station-format { display: none; }
+
+  .rds-badges { gap: 4px; max-width: 62%; }
+  .rds-tag { font-size: 9.5px; padding: 2px 6px; }
+
+  .now-playing-stage {
+    grid-template-columns: 74px 1fr;
+    gap: 12px;
+    padding: 2px 0 0;
+    margin: 0;
+  }
+
+  .vinyl-wrap { width: 74px; height: 74px; }
+  .vinyl-disc { width: 72px; height: 72px; }
+  .vinyl-grooves { inset: 6px; }
+  .vinyl-grooves::after { inset: 9px; }
+  .vinyl-cover { width: 32px; height: 32px; }
+  .vinyl-spindle { width: 8px; height: 8px; }
+  .vinyl-emblem { font-size: 15px; }
+
+  .on-air-eyebrow { font-size: 9.5px; margin-bottom: 2px; }
+  .track-title {
+    font-size: 15.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: block;
+  }
+  .track-artist { font-size: 12.5px; margin-top: 2px; }
+  .track-album { display: none; }
+  .broadcast-bar-wrap { margin-top: 6px; }
+  .broadcast-times { font-size: 10px; margin-bottom: 3px; }
+  .no-scrub-hint { font-size: 9.5px; }
+
+  .controls-bar {
+    padding: 6px 9px;
+    gap: 5px;
+    border-radius: 11px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+
+  .transport-group,
+  .feedback-group {
+    width: auto;
+    gap: 5px;
+    flex-wrap: nowrap;
+  }
+
+  .btn-power { padding: 6px 9px; font-size: 11px; gap: 5px; white-space: nowrap; }
+  .power-ico { width: 12px; height: 12px; }
+  .btn-ctrl { padding: 6px 8px; font-size: 11px; gap: 4px; white-space: nowrap; }
+
+  .stations-panel {
+    max-height: none;
+    height: 100%;
+    min-height: 0;
+    border-radius: 13px;
+  }
+
+  .panel-head { padding: 8px 10px 7px; }
+  .panel-title { font-size: 11px; }
+  .sort-tab { font-size: 9.5px; padding: 2px 6px; }
+  .stations-list { padding: 6px 8px 8px; gap: 5px; }
+  .st-card { padding: 6px 9px 8px; border-radius: 9px; }
+  .st-freq { font-size: 10.5px; min-width: 36px; }
+  .st-name { font-size: 12px; }
+  .st-count { font-size: 9.5px; }
+  .st-row-2 { font-size: 10.5px; padding-left: 44px; margin-top: 2px; }
+}
+
+@media (max-height: 620px) {
+  .wheel-container {
+    transform: scale(0.60);
+    transform-origin: center center;
+  }
+}
+
+@media (max-height: 460px) {
+  .wheel-container {
+    transform: scale(0.52);
+    transform-origin: center center;
+  }
+}
+
+@media (max-height: 380px) {
+  .wheel-container {
+    transform: scale(0.45);
+    transform-origin: center center;
   }
 }

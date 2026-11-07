@@ -522,7 +522,8 @@ window.radioAudio = (() => {
       let lastMhzSent = -1;
 
       const sendFreqAt = (clientX) => {
-        const rect = scale.getBoundingClientRect();
+        const inner = scale.querySelector(".tuner-ticks") || scale;
+        const rect = inner.getBoundingClientRect();
         if (rect.width <= 0) return;
         const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
         const mhz = FREQ_MIN + ratio * (FREQ_MAX - FREQ_MIN);
