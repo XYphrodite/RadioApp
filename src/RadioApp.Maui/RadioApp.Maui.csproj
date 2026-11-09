@@ -16,9 +16,9 @@
 
         <ApplicationTitle>RadioWork FM</ApplicationTitle>
         <ApplicationId>com.radiowork.fm</ApplicationId>
-        <Version>0.2.2</Version>
-        <ApplicationDisplayVersion>0.2.2</ApplicationDisplayVersion>
-        <ApplicationVersion>7</ApplicationVersion>
+        <Version>0.2.3</Version>
+        <ApplicationDisplayVersion>0.2.3</ApplicationDisplayVersion>
+        <ApplicationVersion>8</ApplicationVersion>
 
         <WindowsPackageType>None</WindowsPackageType>
 

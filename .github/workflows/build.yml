@@ -123,18 +123,28 @@ jobs:
             -CompressionLevel Optimal -Force
 
       - name: Publish RadioApp.Maui (Android Signed APK + Embedded Tailscale)
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
         run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
           $ksPath = Join-Path $PWD "artifacts/radiowork-ci.keystore"
-          keytool -genkeypair -v `
-            -keystore $ksPath `
-            -alias radiowork `
-            -keyalg RSA `
-            -keysize 2048 `
-            -validity 10000 `
-            -storepass radiowork123 `
-            -keypass radiowork123 `
-            -dname "CN=RadioWork FM, OU=Audio, O=RadioWork, L=Local, S=Local, C=US"
-          if ($LASTEXITCODE -ne 0) { throw "keytool failed" }
+          if (-not [string]::IsNullOrWhiteSpace($env:ANDROID_KEYSTORE_BASE64) -and -not [string]::IsNullOrWhiteSpace($env:ANDROID_KEYSTORE_PASS)) {
+            [IO.File]::WriteAllBytes($ksPath, [Convert]::FromBase64String($env:ANDROID_KEYSTORE_BASE64.Trim()))
+            $ksPass = $env:ANDROID_KEYSTORE_PASS.Trim()
+          } else {
+            $ksPass = "radiowork123"
+            keytool -genkeypair -v `
+              -keystore $ksPath `
+              -alias radiowork `
+              -keyalg RSA `
+              -keysize 2048 `
+              -validity 10000 `
+              -storepass $ksPass `
+              -keypass $ksPass `
+              -dname "CN=RadioWork FM, OU=Audio, O=RadioWork, L=Local, S=Local, C=US"
+            if ($LASTEXITCODE -ne 0) { throw "keytool failed" }
+          }
 
           dotnet publish src/RadioApp.Maui/RadioApp.Maui.csproj `
             -p:OnlyTarget=net10.0-android `
@@ -145,8 +155,8 @@ jobs:
             -p:AndroidKeyStore=true `
             -p:AndroidSigningKeyStore="$ksPath" `
             -p:AndroidSigningKeyAlias=radiowork `
-            -p:AndroidSigningKeyPass=radiowork123 `
-            -p:AndroidSigningStorePass=radiowork123 `
+            -p:AndroidSigningKeyPass="$ksPass" `
+            -p:AndroidSigningStorePass="$ksPass" `
             -o artifacts/android
           if ($LASTEXITCODE -ne 0) { throw "RadioApp.Maui Android publish failed" }
 

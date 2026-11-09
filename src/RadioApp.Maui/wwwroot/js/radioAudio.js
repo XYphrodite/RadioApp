@@ -26,6 +26,24 @@ window.radioAudio = (() => {
   let lastSwitchAt = 0;
   let tuneDebounceTimer = null;
   let artworkTimer = null;
+  let switchingSrc = false;
+
+  function pauseSilently(el) {
+    if (!el) return;
+    el.__suppressPause = true;
+    try { el.pause(); } catch (_) {}
+    setTimeout(() => { el.__suppressPause = false; }, 0);
+  }
+
+  function setAudioSrc(el, url) {
+    if (!el) return;
+    switchingSrc = true;
+    try {
+      el.src = url;
+    } finally {
+      setTimeout(() => { switchingSrc = false; }, 0);
+    }
+  }
 
   let vizState = {
     powerOn: true,
@@ -95,6 +113,15 @@ window.radioAudio = (() => {
       }
     });
 
+    el.addEventListener("pause", () => {
+      if (el !== audioEl) return;
+      if (el.__suppressPause || switchingSrc || el.ended || el.error || !vizState.powerOn) return;
+      vizState.powerOn = false;
+      if (dotNetRef) {
+        dotNetRef.invokeMethodAsync("OnMediaPowerAsync", false).catch(() => {});
+      }
+    });
+
     el.addEventListener("error", () => {
       if (el !== audioEl || currentTrackId < 0) return;
 
@@ -105,7 +132,7 @@ window.radioAudio = (() => {
         const target = Math.max(0, streamBaseOffsetSec);
         streamBaseOffsetSec = 0;
         streamLoadStartedAt = performance.now();
-        el.src = currentDirectUrl;
+        setAudioSrc(el, currentDirectUrl);
         const onMeta = () => {
           el.removeEventListener("loadedmetadata", onMeta);
           if (el.duration && target < el.duration - 0.5) {
@@ -126,7 +153,7 @@ window.radioAudio = (() => {
         el.removeAttribute("crossorigin");
         el.crossOrigin = null;
         streamLoadStartedAt = performance.now();
-        el.src = currentSrc;
+        setAudioSrc(el, currentSrc);
         if (vizState.powerOn) {
           el.play().catch(() => {});
         }
@@ -139,7 +166,7 @@ window.radioAudio = (() => {
         currentStreamMode = "transcode";
         const ss = Math.max(0, streamBaseOffsetSec);
         streamLoadStartedAt = performance.now();
-        el.src = `${currentTranscodeBaseUrl}&ss=${ss.toFixed(2)}`;
+        setAudioSrc(el, `${currentTranscodeBaseUrl}&ss=${ss.toFixed(2)}`);
         if (vizState.powerOn) {
           el.play().catch(() => {});
         }
@@ -157,7 +184,7 @@ window.radioAudio = (() => {
     preloadTrackId = -1;
     if (!preloadEl) return;
     try {
-      preloadEl.pause();
+      pauseSilently(preloadEl);
       preloadEl.removeAttribute("src");
       preloadEl.load();
     } catch (_) {}
@@ -280,13 +307,13 @@ window.radioAudio = (() => {
 
     if (desiredMode === "opus") {
       streamBaseOffsetSec = targetElapsed;
-      audio.src = `${currentOpusBaseUrl}&ss=${targetElapsed.toFixed(2)}`;
+      setAudioSrc(audio, `${currentOpusBaseUrl}&ss=${targetElapsed.toFixed(2)}`);
     } else if (desiredMode === "transcode") {
       streamBaseOffsetSec = targetElapsed;
-      audio.src = `${currentTranscodeBaseUrl}&ss=${targetElapsed.toFixed(2)}`;
+      setAudioSrc(audio, `${currentTranscodeBaseUrl}&ss=${targetElapsed.toFixed(2)}`);
     } else {
       streamBaseOffsetSec = 0;
-      audio.src = currentDirectUrl;
+      setAudioSrc(audio, currentDirectUrl);
       const onLoadedMeta = () => {
         audio.removeEventListener("loadedmetadata", onLoadedMeta);
         if (audio.duration && targetElapsed < audio.duration - 0.5) {
@@ -329,7 +356,14 @@ window.radioAudio = (() => {
     const trackId = Number(opts.trackId);
     if (trackId < 0 || !opts.directUrl) {
       cancelPreload();
-      audio.pause();
+      pauseSilently(audio);
+      return;
+    }
+
+    if (!vizState.powerOn) {
+      cancelPreload();
+      pauseSilently(audio);
+      updateMediaSession(opts);
       return;
     }
 
@@ -352,7 +386,7 @@ window.radioAudio = (() => {
 
       if (rapidSweep) {
         // Listener is dragging the FM dial or rapidly stepping stations — avoid spawning intermediate streams
-        audio.pause();
+        pauseSilently(audio);
         const switchedAt = now;
         tuneDebounceTimer = setTimeout(() => {
           tuneDebounceTimer = null;
@@ -365,6 +399,8 @@ window.radioAudio = (() => {
       return;
     }
 
+    updateMediaSession(opts);
+
     // Same track already loaded — keep live sync tight without interrupting an in-flight buffer
     if (vizState.powerOn && !tuneDebounceTimer) {
       const loadingMs = performance.now() - streamLoadStartedAt;
@@ -373,24 +409,24 @@ window.radioAudio = (() => {
       if (desiredMode === "opus" || desiredMode === "transcode") {
         const baseUrl = desiredMode === "opus" ? currentOpusBaseUrl : currentTranscodeBaseUrl;
         const effectivePos = streamBaseOffsetSec + (audio.currentTime || 0);
-        if (audio.paused && loadingMs > 600) {
-          if (Math.abs(effectivePos - targetElapsed) > 4.5) {
+        if (audio.paused) {
+          if (Math.abs(effectivePos - targetElapsed) > 1.5) {
             streamBaseOffsetSec = targetElapsed;
             streamLoadStartedAt = performance.now();
-            audio.src = `${baseUrl}&ss=${targetElapsed.toFixed(2)}`;
+            setAudioSrc(audio, `${baseUrl}&ss=${targetElapsed.toFixed(2)}`);
           }
           audio.play().catch(() => {});
         } else if (!isBuffering && audio.readyState >= 3 && Math.abs(effectivePos - targetElapsed) > 5.5) {
           streamBaseOffsetSec = targetElapsed;
           streamLoadStartedAt = performance.now();
-          audio.src = `${baseUrl}&ss=${targetElapsed.toFixed(2)}`;
+          setAudioSrc(audio, `${baseUrl}&ss=${targetElapsed.toFixed(2)}`);
           audio.play().catch(() => {});
         }
       } else {
-        if (!isBuffering && audio.readyState >= 2 && Math.abs((audio.currentTime || 0) - targetElapsed) > 2.5) {
+        if ((!isBuffering || audio.paused) && audio.readyState >= 1 && Math.abs((audio.currentTime || 0) - targetElapsed) > 1.8) {
           try { audio.currentTime = targetElapsed; } catch (_) {}
         }
-        if (audio.paused && loadingMs > 400) {
+        if (audio.paused) {
           audio.play().catch(() => {});
         }
       }
@@ -407,6 +443,9 @@ window.radioAudio = (() => {
     if (audioEl) {
       audioEl.volume = vizState.volume;
       audioEl.muted = !vizState.powerOn;
+      if (!vizState.powerOn && !audioEl.paused) {
+        pauseSilently(audioEl);
+      }
     }
     if ("mediaSession" in navigator) {
       try { navigator.mediaSession.playbackState = vizState.powerOn ? "playing" : "paused"; } catch (_) {}

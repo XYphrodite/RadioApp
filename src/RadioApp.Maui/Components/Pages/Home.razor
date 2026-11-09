@@ -3,6 +3,7 @@
 @inject RadioBroadcastEngine Engine
 @inject UserRadioStore Store
 @inject ITailscaleBridge Tailscale
+@inject IMediaSessionBridge MediaBridge
 @inject HttpClient Http
 @inject IJSRuntime JS
 
@@ -521,6 +522,9 @@
         _serverUrlInput = Store.Preferences.ServerBaseUrl;
         _authKeyInput = Store.Preferences.TailscaleAuthKey;
         Tailscale.StateChanged += OnTailscaleStateChanged;
+        MediaBridge.PlayPauseRequested += OnNativePlayPauseRequested;
+        MediaBridge.TogglePlayPauseRequested += OnNativeTogglePlayPauseRequested;
+        MediaBridge.StepStationRequested += OnNativeStepStationRequested;
 
         bool hadDiskCache = Engine.TryLoadFromDiskCache();
         if (hadDiskCache)
@@ -543,6 +547,25 @@
     private void OnTailscaleStateChanged()
     {
         _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void OnNativePlayPauseRequested(bool play)
+    {
+        _ = InvokeAsync(() => OnMediaPowerAsync(play));
+    }
+
+    private void OnNativeTogglePlayPauseRequested()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            await TogglePowerAsync();
+            StateHasChanged();
+        });
+    }
+
+    private void OnNativeStepStationRequested(int direction)
+    {
+        _ = InvokeAsync(() => OnStepFrequencyAsync(direction));
     }
 
     private async Task AutoResumeTailscaleAndConnectAsync()
@@ -649,7 +672,7 @@
                 if (!_isOnline)
                 {
                     _offlineRetryTicks++;
-                    if (_offlineRetryTicks >= 5 && !_isLoadingCatalog && !Tailscale.IsBusy)
+                    if (_offlineRetryTicks >= 5 && !_isLoadingCatalog && !Tailscale.IsBusy && !_serverPopoverOpen)
                     {
                         _offlineRetryTicks = 0;
                         _ = InvokeAsync(() => ReloadCatalogAsync(showSpinner: false));
@@ -812,6 +835,7 @@
         Store.Preferences.TailscaleAuthKey = "";
         Store.Save();
         Engine.RuntimeBaseUrlOverride = null;
+        MediaBridge.Stop();
         await Tailscale.LogoutAsync();
         _isOnline = false;
         StateHasChanged();
@@ -899,13 +923,28 @@
         _lastSyncedStation = _activeStation.Name;
         _lastSyncedBaseUrl = baseUrl;
 
+        var stationLabel = $"{_activeStation.FrequencyMhz.ToString("0.0", CultureInfo.InvariantCulture)} FM · {_activeStation.Name}";
         var coverUrl = _coverFailedTrackIds.Contains(tr.Id) ? "" : Engine.GetCoverUrl(tr);
+
+        if (MediaBridge.IsSupported)
+        {
+            MediaBridge.UpdatePlayback(new MediaPlaybackSnapshot(
+                TrackId: tr.Id,
+                TrackTitle: tr.DisplayTitle,
+                TrackArtist: tr.Artist,
+                StationLabel: stationLabel,
+                CoverUrl: coverUrl,
+                IsPlaying: Store.Preferences.PowerOn,
+                ElapsedSec: _activeStation.ElapsedSec,
+                DurationSec: _activeStation.DurationSec));
+        }
+
         await JS.InvokeVoidAsync("radioAudio.syncBroadcast", new
         {
             trackId = tr.Id,
             trackTitle = tr.DisplayTitle,
             trackArtist = tr.Artist,
-            stationLabel = $"{_activeStation.FrequencyMhz.ToString("0.0", CultureInfo.InvariantCulture)} FM · {_activeStation.Name}",
+            stationLabel,
             coverUrl,
             directUrl = $"{baseUrl}/api/stream/{tr.Id}",
             transcodeBaseUrl = $"{baseUrl}/api/stream/{tr.Id}?transcode=1",
@@ -1183,6 +1222,9 @@
     public ValueTask DisposeAsync()
     {
         Tailscale.StateChanged -= OnTailscaleStateChanged;
+        MediaBridge.PlayPauseRequested -= OnNativePlayPauseRequested;
+        MediaBridge.TogglePlayPauseRequested -= OnNativeTogglePlayPauseRequested;
+        MediaBridge.StepStationRequested -= OnNativeStepStationRequested;
         _coverDelayCts?.Cancel();
         _coverDelayCts?.Dispose();
         _tickCts?.Cancel();

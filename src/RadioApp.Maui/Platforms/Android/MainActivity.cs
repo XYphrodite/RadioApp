@@ -1,7 +1,10 @@
+using Android;
 using Android.App;
 using Android.Content;
 using Android.Content.PM;
 using Android.OS;
+using AndroidX.Core.App;
+using AndroidX.Core.Content;
 using AndroidX.Core.View;
 
 namespace RadioApp.Maui;
@@ -9,9 +12,11 @@ namespace RadioApp.Maui;
 [Activity(
     Theme = "@style/Maui.SplashTheme",
     MainLauncher = true,
+    LaunchMode = LaunchMode.SingleTop,
     ConfigurationChanges = ConfigChanges.ScreenSize | ConfigChanges.Orientation | ConfigChanges.UiMode | ConfigChanges.ScreenLayout | ConfigChanges.SmallestScreenSize | ConfigChanges.Density)]
 public class MainActivity : MauiAppCompatActivity
 {
+    private const int RequestPostNotificationsCode = 1001;
     private PowerManager.WakeLock? _wakeLock;
 
     protected override void OnCreate(Bundle? savedInstanceState)
@@ -46,6 +51,17 @@ public class MainActivity : MauiAppCompatActivity
 
                 ViewCompat.SetOnApplyWindowInsetsListener(Window.DecorView, new SystemBarInsetsListener());
                 ViewCompat.RequestApplyInsets(Window.DecorView);
+            }
+
+            if (OperatingSystem.IsAndroidVersionAtLeast(33))
+            {
+                if (ContextCompat.CheckSelfPermission(this, Manifest.Permission.PostNotifications) != Permission.Granted)
+                {
+                    ActivityCompat.RequestPermissions(
+                        this,
+                        new[] { Manifest.Permission.PostNotifications },
+                        RequestPostNotificationsCode);
+                }
             }
 
             if (GetSystemService(Context.PowerService) is PowerManager pm)

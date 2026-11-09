@@ -58,8 +58,10 @@ public static class MauiProgram
 
 #if ANDROID
         builder.Services.AddSingleton<ITailscaleBridge, RadioApp.Maui.Platforms.Android.AndroidTsnetBridge>();
+        builder.Services.AddSingleton<IMediaSessionBridge, RadioApp.Maui.Platforms.Android.AndroidMediaSessionBridge>();
 #else
         builder.Services.AddSingleton<ITailscaleBridge, NoOpTailscaleBridge>();
+        builder.Services.AddSingleton<IMediaSessionBridge, NoOpMediaSessionBridge>();
 #endif
 
         builder.Services.AddSingleton<RadioBroadcastEngine>();
