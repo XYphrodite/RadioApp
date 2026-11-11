@@ -10,7 +10,7 @@
 <div class="ambient-bg"></div>
 <div class="scanlines"></div>
 
-<div class="app-shell" @onclick="ClosePopoverIfOpen">
+<div class="app-shell @(IsPlayerMode ? "player-mode" : "")" @onclick="ClosePopoverIfOpen">
     <!-- TOP BAR -->
     <header class="topbar">
         <div class="brand">
@@ -473,7 +473,8 @@ else
                     <button class="btn-ctrl btn-fullscreen-toggle"
                             @onclick="ToggleLibraryFullscreen"
                             title="@(_libraryFullscreen ? "Свернуть в обычный вид" : "Развернуть фонотеку на весь экран")">
-                        @(_libraryFullscreen ? "↙ Свернуть" : "⛶ Во весь экран")
+                        <span class="hide-xs">@(_libraryFullscreen ? "↙ Свернуть" : "⛶ Во весь экран")</span>
+                        <span class="show-xs">@(_libraryFullscreen ? "↙" : "⛶")</span>
                     </button>
                 </div>
             </div>
