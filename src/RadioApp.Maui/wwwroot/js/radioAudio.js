@@ -27,6 +27,7 @@ window.radioAudio = (() => {
   let tuneDebounceTimer = null;
   let artworkTimer = null;
   let switchingSrc = false;
+  let currentFree = false; // true in media-player mode (no live-broadcast position sync)
 
   function pauseSilently(el) {
     if (!el) return;
@@ -270,6 +271,7 @@ window.radioAudio = (() => {
     currentDirectUrl = opts.directUrl || "";
     currentTranscodeBaseUrl = opts.transcodeBaseUrl || "";
     currentOpusBaseUrl = opts.opusBaseUrl || "";
+    currentFree = !!opts.freePlay;
 
     updateMediaSession(opts);
 
@@ -372,7 +374,10 @@ window.radioAudio = (() => {
     const useTranscode = !useOpus && (!!opts.isTranscoded || failedDirectIds.has(trackId));
     const desiredMode = useOpus ? "opus" : (useTranscode ? "transcode" : "direct");
 
-    const trackChanged = trackId !== currentTrackId || desiredMode !== currentStreamMode;
+    const trackChanged = trackId !== currentTrackId ||
+      desiredMode !== currentStreamMode ||
+      !!opts.freePlay !== currentFree ||
+      (!!opts.freePlay && !!opts.forceRestart);
 
     if (trackChanged) {
       if (tuneDebounceTimer) {
@@ -400,6 +405,14 @@ window.radioAudio = (() => {
     }
 
     updateMediaSession(opts);
+
+    // Media-player mode: never drag the position towards a "live" time, just make sure it is playing
+    if (opts.freePlay) {
+      if (vizState.powerOn && audio.paused && !audio.ended) {
+        audio.play().catch(() => {});
+      }
+      return;
+    }
 
     // Same track already loaded — keep live sync tight without interrupting an in-flight buffer
     if (vizState.powerOn && !tuneDebounceTimer) {
@@ -430,6 +443,36 @@ window.radioAudio = (() => {
           audio.play().catch(() => {});
         }
       }
+    }
+  }
+
+  function getPosition() {
+    if (!audioEl || currentTrackId < 0) {
+      return { pos: 0, dur: 0, paused: true };
+    }
+    const pos = streamBaseOffsetSec + (audioEl.currentTime || 0);
+    const dur = Number.isFinite(audioEl.duration) && streamBaseOffsetSec === 0 ? audioEl.duration : 0;
+    return { pos, dur, paused: audioEl.paused };
+  }
+
+  function seekTo(sec) {
+    const a = audioEl;
+    if (!a || currentTrackId < 0) return;
+    sec = Math.max(0, Number(sec) || 0);
+
+    if (currentStreamMode === "direct") {
+      try { a.currentTime = sec; } catch (_) {}
+      if (vizState.powerOn && a.paused) a.play().catch(() => {});
+      return;
+    }
+
+    const base = currentStreamMode === "opus" ? currentOpusBaseUrl : currentTranscodeBaseUrl;
+    if (!base) return;
+    streamBaseOffsetSec = sec;
+    streamLoadStartedAt = performance.now();
+    setAudioSrc(a, `${base}&ss=${sec.toFixed(2)}`);
+    if (vizState.powerOn) {
+      a.play().catch(() => {});
     }
   }
 
@@ -628,6 +671,8 @@ window.radioAudio = (() => {
     init,
     syncBroadcast,
     preloadNext,
+    getPosition,
+    seekTo,
     setVolumeOnly,
     playStaticBurst
   };

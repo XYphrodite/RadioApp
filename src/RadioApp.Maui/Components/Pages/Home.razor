@@ -15,13 +15,18 @@
     <header class="topbar">
         <div class="brand">
             <span class="live-dot @GetLiveDotClass()"></span>
-            <span class="brand-title">RadioWork // FM</span>
+            <span class="brand-title">@(IsPlayerMode ? "RadioWork // Player" : "RadioWork // FM")</span>
             <span class="brand-sub">
-                @(_isOnline ? $"Прямой эфир · {GetServerHostLabel()}" : "Ожидание сигнала эфир-сервера...")
+                @(_isOnline ? $"{(IsPlayerMode ? "Медиаплеер" : "Прямой эфир")} · {GetServerHostLabel()}" : "Ожидание сигнала эфир-сервера...")
             </span>
         </div>
 
         <div class="topbar-right">
+            <div class="sort-tabs mode-switch" @onclick:stopPropagation="true" title="Режим работы приложения">
+                <button class="sort-tab @(!IsPlayerMode ? "active" : "")" @onclick='() => SetAppModeAsync("radio")'>📻 Радио</button>
+                <button class="sort-tab @(IsPlayerMode ? "active" : "")" @onclick='() => SetAppModeAsync("player")'>🎵 Плеер</button>
+            </div>
+
             @if (Engine.IsLoaded)
             {
                 <span class="stat-pill hide-mobile">
@@ -30,13 +35,16 @@
             }
             <span class="stat-pill hide-xs">@_clockText</span>
 
-            <button class="btn-ghost" @onclick="ToggleWheel" @onclick:stopPropagation="true" title="Круговое меню выбора волны как в GTA [Q]">
-                ◎ <span class="hide-xs">Колесо станций</span><span class="show-xs">Волны</span>
-                @if (!IsAndroid)
-                {
-                    <span class="kbd">Q</span>
-                }
-            </button>
+            @if (!IsPlayerMode)
+            {
+                <button class="btn-ghost" @onclick="ToggleWheel" @onclick:stopPropagation="true" title="Круговое меню выбора волны как в GTA [Q]">
+                    ◎ <span class="hide-xs">Колесо станций</span><span class="show-xs">Волны</span>
+                    @if (!IsAndroid)
+                    {
+                        <span class="kbd">Q</span>
+                    }
+                </button>
+            }
 
             <button class="btn-ghost" @onclick="ToggleServerPopover" @onclick:stopPropagation="true" title="Настройки подключения и Tailscale">
                 ⚙
@@ -160,7 +168,7 @@
     <!-- MAIN WORKSPACE -->
     <main class="workspace">
         <!-- LEFT: FM RECEIVER -->
-        <section class="receiver-col">
+        <section class="receiver-col @(IsPlayerMode ? "mode-hidden" : "")">
             <!-- FM ANALOG/DIGITAL SCALE -->
             <div class="tuner-box">
                 <div class="tuner-header">
@@ -397,7 +405,7 @@
         </section>
 
         <!-- RIGHT: ALL 11 STATIONS LIVE BOARD -->
-        <aside class="stations-panel">
+        <aside class="stations-panel @(IsPlayerMode ? "mode-hidden" : "")">
             <div class="panel-head">
                 <span class="panel-title">Все @(_allStations.Count > 0 ? _allStations.Count : 11) станций (живой эфир)</span>
                 <div class="sort-tabs">
@@ -434,6 +442,174 @@
                 }
             </div>
         </aside>
+        @if (IsPlayerMode)
+        {
+            var pt = _playerTrack;
+
+            <!-- MEDIA PLAYER: NOW PLAYING -->
+            <section class="receiver-col player-col">
+                <div class="deck-card player-deck">
+                    @if (pt is not null)
+                    {
+                        bool showPlayerCover = !_coverFailedTrackIds.Contains(pt.Id);
+                        double shownPos = _isSeeking ? _seekPreview : _playerPos;
+                        int seekMax = (int)Math.Max(1, Math.Ceiling(_playerDur));
+
+                        <div class="now-playing-stage">
+                            <div class="vinyl-wrap">
+                                <div class="vinyl-disc @(Store.Preferences.PowerOn ? "" : "paused")">
+                                    <div class="vinyl-grooves"></div>
+                                    @if (showPlayerCover)
+                                    {
+                                        <img class="vinyl-cover"
+                                             @key="pt.Id"
+                                             src="@Engine.GetCoverUrl(pt)"
+                                             decoding="async"
+                                             alt=""
+                                             @onerror="() => OnCoverLoadError(pt.Id)" />
+                                        <div class="vinyl-spindle"></div>
+                                    }
+                                </div>
+                                @if (!showPlayerCover)
+                                {
+                                    <div class="vinyl-emblem">🎵</div>
+                                }
+                            </div>
+
+                            <div class="track-meta">
+                                <div class="on-air-eyebrow">
+                                    <span>@(Store.Preferences.PowerOn ? "▶ СЕЙЧАС ИГРАЕТ" : "⏸ ПАУЗА")</span>
+                                    <span>· @(_playerIndex + 1) / @_playerQueue.Count</span>
+                                </div>
+                                <div class="track-title" title="@pt.DisplayTitle">@pt.DisplayTitle</div>
+                                <div class="track-artist" title="@pt.Artist">@pt.Artist</div>
+                                <div class="track-album" title="@pt.Album">@pt.Album</div>
+
+                                <div class="rds-badges player-badges">
+                                    @if (!string.IsNullOrWhiteSpace(pt.Genre))
+                                    {
+                                        <span class="rds-tag hi">@pt.Genre</span>
+                                    }
+                                    <span class="rds-tag">@pt.CodecBadge</span>
+                                </div>
+
+                                <div class="player-seek">
+                                    <span>@FormatTime(shownPos)</span>
+                                    <input type="range"
+                                           class="vol-slider seek-slider"
+                                           min="0"
+                                           max="@seekMax"
+                                           step="1"
+                                           value="@((int)shownPos)"
+                                           @oninput="OnSeekInput"
+                                           @onchange="OnSeekCommitAsync" />
+                                    <span>@FormatTime(_playerDur)</span>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="deck-placeholder">
+                            @(Engine.IsLoaded
+                                ? "ВЫБЕРИ ТРЕК В СПИСКЕ — ПЛЕЕР ИГРАЕТ ВСЮ ФОНОТЕКУ"
+                                : (_isLoadingCatalog || Tailscale.IsBusy ? "ПОДКЛЮЧЕНИЕ К СЕРВЕРУ ФОНОТЕКИ..." : "НЕТ СВЯЗИ С СЕРВЕРОМ ФОНОТЕКИ"))
+                        </div>
+                    }
+                </div>
+
+                <div class="controls-bar player-controls">
+                    <div class="transport-group">
+                        <button class="btn-ctrl @(Store.Preferences.PlayerShuffle ? "liked" : "")"
+                                @onclick="TogglePlayerShuffle"
+                                title="Случайный порядок">
+                            🔀 <span class="hide-xs">Shuffle</span>
+                        </button>
+                        <button class="btn-ctrl" @onclick="() => PlayerStepAsync(-1)" title="Предыдущий трек [←]">⏮</button>
+                        <button class="btn-power @(Store.Preferences.PowerOn ? "" : "off")"
+                                @onclick="TogglePowerAsync"
+                                title="Играть / пауза [Space]">
+                            <span>@(Store.Preferences.PowerOn ? "⏸ ПАУЗА" : "▶ ИГРАТЬ")</span>
+                        </button>
+                        <button class="btn-ctrl" @onclick="() => PlayerStepAsync(1)" title="Следующий трек [→]">⏭</button>
+                        <button class="btn-ctrl @(Store.Preferences.PlayerRepeat != "off" ? "liked" : "")"
+                                @onclick="CyclePlayerRepeat"
+                                title="Повтор: выкл / всё / один трек">
+                            @(Store.Preferences.PlayerRepeat switch { "one" => "🔂", _ => "🔁" })
+                            <span class="hide-xs">@(Store.Preferences.PlayerRepeat switch { "one" => "Один", "all" => "Всё", _ => "Выкл" })</span>
+                        </button>
+                    </div>
+
+                    @if (!IsAndroid)
+                    {
+                        <div class="audio-group">
+                            <div class="vol-wrap">
+                                <span>🔊</span>
+                                <input type="range"
+                                       class="vol-slider"
+                                       min="0"
+                                       max="100"
+                                       value="@VolumePercent"
+                                       @oninput="OnVolumeInputAsync" />
+                                <span>@VolumePercent%</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </section>
+
+            <!-- MEDIA PLAYER: LIBRARY -->
+            <aside class="stations-panel player-panel">
+                <div class="panel-head player-head">
+                    <span class="panel-title">Фонотека · @FormatInt(_filteredTracks.Count) тр.</span>
+                </div>
+
+                <div class="player-filters">
+                    <input class="server-input"
+                           type="text"
+                           placeholder="🔎 Поиск: артист, трек, альбом"
+                           @bind="PlayerSearch"
+                           @bind:event="oninput" />
+                    <select class="server-input player-select" @bind="PlayerStationFilter">
+                        <option value="">Вся фонотека</option>
+                        @foreach (var sn in Engine.StationNames)
+                        {
+                            <option value="@sn">@sn</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="stations-list">
+                    @foreach (var t in _filteredTracks.Take(_playerShown))
+                    {
+                        bool isCur = pt is not null && pt.Id == t.Id;
+                        <div class="st-card track-row @(isCur ? "active" : "")"
+                             @key="t.Id"
+                             style="--st-color: var(--accent)"
+                             @onclick="() => PlayFromListAsync(t)">
+                            <div class="st-row-1">
+                                <div class="st-title-wrap">
+                                    <span class="st-name">@(isCur && Store.Preferences.PowerOn ? "▶ " : "")@t.DisplayTitle</span>
+                                </div>
+                                <span class="st-count">@FormatTime(t.EffectiveDurationSec)</span>
+                            </div>
+                            <div class="st-row-2">@(t.Artist + (string.IsNullOrWhiteSpace(t.Album) ? "" : " · " + t.Album))</div>
+                        </div>
+                    }
+
+                    @if (_filteredTracks.Count > _playerShown)
+                    {
+                        <button class="btn-ctrl player-more" @onclick="ShowMorePlayerTracks">
+                            Показать ещё (@FormatInt(_filteredTracks.Count - _playerShown))
+                        </button>
+                    }
+                    else if (_filteredTracks.Count == 0)
+                    {
+                        <div class="deck-placeholder">@(Engine.IsLoaded ? "Ничего не найдено" : "Каталог не загружен")</div>
+                    }
+                </div>
+            </aside>
+        }
     </main>
 </div>
 
@@ -517,6 +693,53 @@
     private int VolumePercent => (int)Math.Round(Store.Preferences.Volume * 100.0);
     private double EffectiveVolume => IsAndroid ? 1.0 : Store.Preferences.Volume;
 
+    // ───────────── Media-player mode state ─────────────
+    private const int PlayerPageSize = 120;
+    private const string PlayerAccent = "#19e68c";
+
+    private bool IsPlayerMode => string.Equals(Store.Preferences.AppMode, "player", StringComparison.OrdinalIgnoreCase);
+
+    private List<RadioTrack> _filteredTracks = new();
+    private List<RadioTrack> _playerQueue = new();
+    private RadioTrack? _playerTrack;
+    private int _playerIndex = -1;
+    private double _playerPos;
+    private double _playerDur;
+    private bool _isSeeking;
+    private double _seekPreview;
+    private int _playerShown = PlayerPageSize;
+    private string _playerSearch = "";
+    private string _playerStation = "";
+
+    private sealed class PlayerPosition
+    {
+        public double Pos { get; set; }
+        public double Dur { get; set; }
+        public bool Paused { get; set; }
+    }
+
+    private string PlayerSearch
+    {
+        get => _playerSearch;
+        set
+        {
+            _playerSearch = value ?? "";
+            _playerShown = PlayerPageSize;
+            RebuildPlayerList();
+        }
+    }
+
+    private string PlayerStationFilter
+    {
+        get => _playerStation;
+        set
+        {
+            _playerStation = value ?? "";
+            _playerShown = PlayerPageSize;
+            RebuildPlayerList();
+        }
+    }
+
     protected override Task OnInitializedAsync()
     {
         _serverUrlInput = Store.Preferences.ServerBaseUrl;
@@ -526,10 +749,17 @@
         MediaBridge.TogglePlayPauseRequested += OnNativeTogglePlayPauseRequested;
         MediaBridge.StepStationRequested += OnNativeStepStationRequested;
 
+        // Player mode never auto-starts music on launch
+        if (IsPlayerMode)
+        {
+            Store.Preferences.PowerOn = false;
+        }
+
         bool hadDiskCache = Engine.TryLoadFromDiskCache();
         if (hadDiskCache)
         {
             RefreshSnapshots();
+            OnCatalogChangedForPlayer();
         }
 
         if (Tailscale.IsSupported && Tailscale.HasSavedSession(Store.Preferences.TailscaleAuthKey))
@@ -688,6 +918,13 @@
                 await InvokeAsync(async () =>
                 {
                     RefreshSnapshots();
+                    if (IsPlayerMode)
+                    {
+                        await PlayerTickAsync();
+                        StateHasChanged();
+                        return;
+                    }
+
                     if (_activeStation is not null)
                     {
                         if (_isOnline &&
@@ -863,6 +1100,7 @@
             _isOnline = ok;
             _connectionError = ok ? null : "Каталог станций пуст.";
             RefreshSnapshots();
+            OnCatalogChangedForPlayer();
 
             if (_jsInitialized && _activeStation is not null)
             {
@@ -900,6 +1138,12 @@
 
     private async Task SyncAudioAsync(double staticBurstSec, bool forceSync = false)
     {
+        if (IsPlayerMode)
+        {
+            await SyncPlayerAudioAsync(_playerPos);
+            return;
+        }
+
         if (!_jsInitialized || _activeStation is null)
             return;
 
@@ -975,6 +1219,12 @@
 
     private async Task StepFrequencyAsync(int dir)
     {
+        if (IsPlayerMode)
+        {
+            await PlayerStepAsync(dir);
+            return;
+        }
+
         if (!Engine.IsLoaded)
             return;
 
@@ -985,6 +1235,12 @@
 
     private async Task TogglePowerAsync()
     {
+        if (IsPlayerMode && _playerTrack is null && !Store.Preferences.PowerOn && _filteredTracks.Count > 0)
+        {
+            await PlayTrackAsync(_filteredTracks[0], rebuildQueue: true);
+            return;
+        }
+
         Store.Preferences.PowerOn = !Store.Preferences.PowerOn;
         Store.Save();
         RefreshSnapshots();
@@ -1124,6 +1380,13 @@
     [JSInvokable]
     public async Task OnAudioTrackEndedAsync()
     {
+        if (IsPlayerMode)
+        {
+            await PlayerTrackEndedAsync();
+            StateHasChanged();
+            return;
+        }
+
         RefreshSnapshots();
         await SyncAudioAsync(staticBurstSec: 0, forceSync: true);
         StateHasChanged();
@@ -1180,6 +1443,329 @@
                 break;
         }
         StateHasChanged();
+    }
+
+    // ───────────── Media-player mode logic ─────────────
+
+    private async Task SetAppModeAsync(string mode)
+    {
+        if (string.Equals(Store.Preferences.AppMode, mode, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        Store.Preferences.AppMode = mode;
+        _wheelOpen = false;
+        _serverPopoverOpen = false;
+
+        if (IsPlayerMode)
+        {
+            RebuildPlayerList();
+            RestorePlayerTrack();
+            Store.Preferences.PowerOn = _playerTrack is not null;
+        }
+        else
+        {
+            Store.Preferences.PowerOn = true;
+            _lastSyncedTrackId = -1;
+        }
+
+        Store.Save();
+        RefreshSnapshots();
+        await SyncAudioAsync(staticBurstSec: 0, forceSync: true);
+    }
+
+    private void OnCatalogChangedForPlayer()
+    {
+        RebuildPlayerList();
+        if (IsPlayerMode)
+            RestorePlayerTrack();
+    }
+
+    private void RebuildPlayerList()
+    {
+        if (!Engine.IsLoaded)
+        {
+            _filteredTracks = new();
+            return;
+        }
+
+        IEnumerable<RadioTrack> q = Engine.LibraryTracks;
+        if (!string.IsNullOrEmpty(_playerStation))
+            q = q.Where(t => string.Equals(t.Station, _playerStation, StringComparison.OrdinalIgnoreCase));
+
+        var words = _playerSearch.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (words.Length > 0)
+        {
+            q = q.Where(t => words.All(w =>
+                t.Artist.Contains(w, StringComparison.OrdinalIgnoreCase) ||
+                t.Album.Contains(w, StringComparison.OrdinalIgnoreCase) ||
+                t.DisplayTitle.Contains(w, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        _filteredTracks = q.ToList();
+    }
+
+    private void RestorePlayerTrack()
+    {
+        if (_playerTrack is not null || !Engine.IsLoaded)
+            return;
+
+        var saved = Store.Preferences.PlayerTrackId >= 0 ? Engine.FindTrack(Store.Preferences.PlayerTrackId) : null;
+        if (saved is null)
+            return;
+
+        _playerTrack = saved;
+        _playerPos = 0;
+        _playerDur = saved.EffectiveDurationSec;
+        BuildPlayerQueue(saved);
+    }
+
+    private void BuildPlayerQueue(RadioTrack start)
+    {
+        IReadOnlyList<RadioTrack> src = _filteredTracks.Any(t => t.Id == start.Id)
+            ? _filteredTracks
+            : Engine.LibraryTracks;
+
+        var list = new List<RadioTrack>(src);
+        if (Store.Preferences.PlayerShuffle)
+        {
+            for (int i = list.Count - 1; i > 0; i--)
+            {
+                int j = Random.Shared.Next(i + 1);
+                (list[i], list[j]) = (list[j], list[i]);
+            }
+
+            int at = list.FindIndex(t => t.Id == start.Id);
+            if (at > 0)
+                (list[0], list[at]) = (list[at], list[0]);
+        }
+
+        _playerQueue = list;
+        _playerIndex = Math.Max(0, list.FindIndex(t => t.Id == start.Id));
+    }
+
+    private async Task PlayFromListAsync(RadioTrack t)
+    {
+        if (_playerTrack is not null && _playerTrack.Id == t.Id)
+        {
+            await TogglePowerAsync();
+            return;
+        }
+
+        await PlayTrackAsync(t, rebuildQueue: true);
+    }
+
+    private async Task PlayTrackAsync(RadioTrack t, bool rebuildQueue)
+    {
+        int idx = rebuildQueue ? -1 : _playerQueue.FindIndex(x => x.Id == t.Id);
+        if (idx < 0)
+            BuildPlayerQueue(t);
+        else
+            _playerIndex = idx;
+
+        _playerTrack = t;
+        _playerPos = 0;
+        _playerDur = t.EffectiveDurationSec;
+        _isSeeking = false;
+        Store.Preferences.PlayerTrackId = t.Id;
+        Store.Preferences.PowerOn = true;
+        Store.Save();
+        await SyncPlayerAudioAsync(0);
+    }
+
+    private async Task PlayerStepAsync(int dir)
+    {
+        if (_playerQueue.Count == 0)
+        {
+            if (_playerTrack is null && _filteredTracks.Count > 0)
+                await PlayTrackAsync(_filteredTracks[0], rebuildQueue: true);
+            return;
+        }
+
+        if (dir < 0 && _playerPos > 3.0)
+        {
+            await SeekPlayerAsync(0);
+            return;
+        }
+
+        int n = _playerQueue.Count;
+        int next = ((_playerIndex + dir) % n + n) % n;
+        await PlayTrackAsync(_playerQueue[next], rebuildQueue: false);
+    }
+
+    private async Task PlayerTrackEndedAsync()
+    {
+        if (_playerTrack is null || _playerQueue.Count == 0)
+            return;
+
+        var repeat = Store.Preferences.PlayerRepeat;
+        if (repeat == "one")
+        {
+            await SeekPlayerAsync(0);
+            return;
+        }
+
+        if (repeat == "off" && _playerIndex + 1 >= _playerQueue.Count)
+        {
+            _playerPos = 0;
+            Store.Preferences.PowerOn = false;
+            Store.Save();
+            await SyncPlayerAudioAsync(0);
+            return;
+        }
+
+        await PlayerStepAsync(1);
+    }
+
+    private async Task SeekPlayerAsync(double sec)
+    {
+        if (!_jsInitialized || _playerTrack is null)
+            return;
+
+        double max = _playerDur > 1 ? _playerDur - 0.5 : double.MaxValue;
+        _playerPos = Math.Clamp(sec, 0, max);
+        await JS.InvokeVoidAsync("radioAudio.seekTo", _playerPos);
+        UpdatePlayerBridge();
+    }
+
+    private void OnSeekInput(ChangeEventArgs e)
+    {
+        if (double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var v))
+        {
+            _isSeeking = true;
+            _seekPreview = v;
+        }
+    }
+
+    private async Task OnSeekCommitAsync(ChangeEventArgs e)
+    {
+        _isSeeking = false;
+        if (double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var v))
+            await SeekPlayerAsync(v);
+    }
+
+    private void TogglePlayerShuffle()
+    {
+        Store.Preferences.PlayerShuffle = !Store.Preferences.PlayerShuffle;
+        Store.Save();
+        if (_playerTrack is not null)
+            BuildPlayerQueue(_playerTrack);
+    }
+
+    private void CyclePlayerRepeat()
+    {
+        Store.Preferences.PlayerRepeat = Store.Preferences.PlayerRepeat switch
+        {
+            "all" => "one",
+            "one" => "off",
+            _ => "all"
+        };
+        Store.Save();
+    }
+
+    private void ShowMorePlayerTracks() => _playerShown += PlayerPageSize;
+
+    private void UpdatePlayerBridge()
+    {
+        if (!MediaBridge.IsSupported)
+            return;
+
+        var tr = _playerTrack;
+        if (tr is null)
+        {
+            MediaBridge.Stop();
+            return;
+        }
+
+        MediaBridge.UpdatePlayback(new MediaPlaybackSnapshot(
+            TrackId: tr.Id,
+            TrackTitle: tr.DisplayTitle,
+            TrackArtist: tr.Artist,
+            StationLabel: string.IsNullOrWhiteSpace(tr.Album) ? "Медиаплеер" : tr.Album,
+            CoverUrl: _coverFailedTrackIds.Contains(tr.Id) ? "" : Engine.GetCoverUrl(tr),
+            IsPlaying: Store.Preferences.PowerOn,
+            ElapsedSec: _playerPos,
+            DurationSec: _playerDur));
+    }
+
+    private async Task SyncPlayerAudioAsync(double startSec)
+    {
+        if (!_jsInitialized)
+            return;
+
+        // Resume pressed with nothing selected yet: pick the first track of the list
+        if (_playerTrack is null && Store.Preferences.PowerOn && _filteredTracks.Count > 0)
+        {
+            _playerTrack = _filteredTracks[0];
+            _playerPos = 0;
+            _playerDur = _playerTrack.EffectiveDurationSec;
+            Store.Preferences.PlayerTrackId = _playerTrack.Id;
+            BuildPlayerQueue(_playerTrack);
+            startSec = 0;
+        }
+
+        var tr = _playerTrack;
+        if (tr is null)
+        {
+            UpdatePlayerBridge();
+            await JS.InvokeVoidAsync("radioAudio.syncBroadcast", new
+            {
+                trackId = -1,
+                directUrl = "",
+                powerOn = false,
+                volume = EffectiveVolume,
+                staticFx = false,
+                accentHex = PlayerAccent,
+                freePlay = true
+            });
+            return;
+        }
+
+        var baseUrl = Engine.EffectiveBaseUrl;
+        var coverUrl = _coverFailedTrackIds.Contains(tr.Id) ? "" : Engine.GetCoverUrl(tr);
+        UpdatePlayerBridge();
+
+        await JS.InvokeVoidAsync("radioAudio.syncBroadcast", new
+        {
+            trackId = tr.Id,
+            trackTitle = tr.DisplayTitle,
+            trackArtist = tr.Artist,
+            stationLabel = string.IsNullOrWhiteSpace(tr.Album) ? "Медиаплеер" : tr.Album,
+            coverUrl,
+            directUrl = $"{baseUrl}/api/stream/{tr.Id}",
+            transcodeBaseUrl = $"{baseUrl}/api/stream/{tr.Id}?transcode=1",
+            opusBaseUrl = $"{baseUrl}/api/stream/{tr.Id}?transcode=1&format=opus",
+            preferOpus = IsAndroid,
+            isTranscoded = tr.IsAlac,
+            targetElapsedSec = startSec,
+            powerOn = Store.Preferences.PowerOn,
+            volume = EffectiveVolume,
+            staticFx = false,
+            accentHex = PlayerAccent,
+            bpm = tr.BpmRounded,
+            energy = tr.EnergyPercent,
+            staticBurstSec = 0,
+            freePlay = true
+        });
+    }
+
+    private async Task PlayerTickAsync()
+    {
+        if (!_jsInitialized || _playerTrack is null || _isSeeking)
+            return;
+
+        try
+        {
+            var p = await JS.InvokeAsync<PlayerPosition>("radioAudio.getPosition");
+            if (p is null)
+                return;
+
+            _playerPos = Math.Max(0, p.Pos);
+            if (p.Dur > 1)
+                _playerDur = p.Dur;
+        }
+        catch
+        {
+        }
     }
 
     private string GetLiveDotClass()

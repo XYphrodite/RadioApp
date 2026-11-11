@@ -34,6 +34,20 @@ public sealed class UserRadioPreferences
 
     [JsonPropertyName("tailscale_auth_key")]
     public string TailscaleAuthKey { get; set; } = "";
+
+    /// <summary>"radio" (live FM broadcast) or "player" (regular media player over the whole library).</summary>
+    [JsonPropertyName("app_mode")]
+    public string AppMode { get; set; } = "radio";
+
+    [JsonPropertyName("player_track_id")]
+    public int PlayerTrackId { get; set; } = -1;
+
+    [JsonPropertyName("player_shuffle")]
+    public bool PlayerShuffle { get; set; }
+
+    /// <summary>"off" | "all" | "one"</summary>
+    [JsonPropertyName("player_repeat")]
+    public string PlayerRepeat { get; set; } = "all";
 }
 
 public sealed class UserRadioStore

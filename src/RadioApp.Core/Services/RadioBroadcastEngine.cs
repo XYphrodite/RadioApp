@@ -19,6 +19,17 @@ public sealed class RadioBroadcastEngine
     private string? _resolvedIpBaseUrl;
     private string? _resolvedForServerUrl;
 
+    private IReadOnlyList<RadioTrack> _library = [];
+    private IReadOnlyList<string> _stationNames = [];
+    private Dictionary<int, RadioTrack> _libraryById = new();
+
+    /// <summary>Every unique track of the catalog (used by the media-player mode), sorted by artist/album/file.</summary>
+    public IReadOnlyList<RadioTrack> LibraryTracks => _library;
+
+    public IReadOnlyList<string> StationNames => _stationNames;
+
+    public RadioTrack? FindTrack(int id) => _libraryById.GetValueOrDefault(id);
+
     public CatalogStats Stats { get; private set; } = new(0, 0, 0);
     public bool IsLoaded => _schedules.Count > 0;
     public UserRadioPreferences Preferences => _store.Preferences;
@@ -271,6 +282,9 @@ public sealed class RadioBroadcastEngine
         {
             _schedules.Clear();
 
+            var libraryById = new Dictionary<int, RadioTrack>();
+            var stationNames = new List<string>();
+
             var uniqueArtists = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             int totalTracks = 0;
             double totalDurationSec = 0;
@@ -285,8 +299,14 @@ public sealed class RadioBroadcastEngine
                 var stationName = string.IsNullOrWhiteSpace(entry.Name) ? key : entry.Name;
                 var theme = StationThemes.Resolve(stationName, entry.Frequency);
 
+                stationNames.Add(stationName);
+
                 foreach (var tr in entry.Tracks)
                 {
+                    if (string.IsNullOrWhiteSpace(tr.Station))
+                        tr.Station = stationName;
+                    libraryById.TryAdd(tr.Id, tr);
+
                     totalTracks++;
                     totalDurationSec += tr.EffectiveDurationSec;
                     if (!string.IsNullOrWhiteSpace(tr.Artist))
@@ -307,6 +327,14 @@ public sealed class RadioBroadcastEngine
 
                 _schedules[stationName] = schedule;
             }
+
+            _libraryById = libraryById;
+            _stationNames = stationNames.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList();
+            _library = libraryById.Values
+                .OrderBy(t => t.Artist, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(t => t.Album, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(t => t.Filename, StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
             Stats = new CatalogStats(
                 TotalTracks: catalog.Tagged > 0 ? catalog.Tagged : totalTracks,
