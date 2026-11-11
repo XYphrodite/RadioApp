@@ -1604,3 +1604,14 @@ input[type="range"].vol-slider::-webkit-slider-thumb {
   .mode-switch .sort-tab { padding: 5px 7px; font-size: 11px; }
   .player-panel { max-height: 60vh; }
 }
+
+/* Keep the top bar inside the viewport on phones (mode switch made it wider) */
+.app-shell { grid-template-columns: minmax(0, 1fr); }
+.topbar { min-width: 0; }
+.topbar-right { min-width: 0; flex-shrink: 0; }
+@media (max-width: 640px) {
+  .brand-title, .brand-sub { display: none; }
+  .brand { flex: 0 0 auto; }
+  .topbar { justify-content: space-between; gap: 6px; }
+  .mode-switch { margin-right: 0; }
+}
