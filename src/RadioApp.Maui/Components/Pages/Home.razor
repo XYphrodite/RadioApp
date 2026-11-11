@@ -452,6 +452,8 @@ else
     bool showPlayerCover = pt is not null && !_coverFailedTrackIds.Contains(pt.Id);
     double shownPos = _isSeeking ? _seekPreview : _playerPos;
     int seekMax = (int)Math.Max(1, Math.Ceiling(_playerDur));
+    double progressPct = Math.Clamp(seekMax > 0 ? (shownPos / (double)seekMax * 100.0) : 0.0, 0.0, 100.0);
+    string progressStyle = $"--progress: {progressPct.ToString("0.0", CultureInfo.InvariantCulture)}%;";
 
     <!-- MAIN WORKSPACE: MEDIA PLAYER -->
     <main class="player-shell @(_libraryFullscreen ? "is-fullscreen" : "")">
@@ -705,16 +707,17 @@ else
         <!-- 2. СЕЙЧАС ИГРАЕТ (КОМПАКТНЫЙ ПЛЕЕР СНИЗУ) -->
         <footer class="player-bottom-dock">
             <div class="dock-scrub-row">
-                <span class="dock-time">@FormatTime(shownPos)</span>
+                <span class="dock-time dock-time-current">@FormatTime(shownPos)</span>
                 <input type="range"
-                       class="vol-slider dock-slider"
+                       class="vol-slider dock-slider @(Store.Preferences.PowerOn ? "playing" : "paused")"
                        min="0"
                        max="@seekMax"
                        step="1"
                        value="@((int)shownPos)"
+                       style="@progressStyle"
                        @oninput="OnSeekInput"
                        @onchange="OnSeekCommitAsync" />
-                <span class="dock-time">@FormatTime(_playerDur)</span>
+                <span class="dock-time dock-time-total">@FormatTime(_playerDur)</span>
             </div>
 
             <div class="dock-content-row">

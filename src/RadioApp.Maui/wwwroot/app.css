@@ -1962,19 +1962,90 @@ input[type="range"].vol-slider::-webkit-slider-thumb {
   color: var(--text-2);
 }
 
-.dock-slider {
-  flex: 1;
-  min-width: 0;
-  height: 4px;
-}
-
 .dock-time {
   min-width: 34px;
   font-size: 10.5px;
 }
 
-.dock-time:last-child {
+.dock-time-current {
+  color: var(--neon-cyan);
+  font-weight: 600;
+}
+
+.dock-time:last-child,
+.dock-time-total {
   text-align: right;
+}
+
+input[type="range"].dock-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1;
+  min-width: 0;
+  height: 6px;
+  border-radius: 99px;
+  background: linear-gradient(
+    to right,
+    var(--neon-cyan, #00f0ff) 0%,
+    var(--accent, #19e68c) var(--progress, 0%),
+    rgba(255, 255, 255, 0.16) var(--progress, 0%),
+    rgba(255, 255, 255, 0.16) 100%
+  ) !important;
+  outline: none;
+  cursor: pointer;
+  transition: height 0.12s ease;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+input[type="range"].dock-slider:hover,
+input[type="range"].dock-slider:active {
+  height: 8px;
+}
+
+input[type="range"].dock-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 2.5px solid var(--accent, #19e68c);
+  box-shadow: 0 0 10px rgba(25, 230, 140, 0.95), 0 0 4px rgba(0, 240, 255, 0.8);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+input[type="range"].dock-slider:hover::-webkit-slider-thumb,
+input[type="range"].dock-slider:active::-webkit-slider-thumb {
+  transform: scale(1.25);
+  box-shadow: 0 0 14px rgba(25, 230, 140, 1), 0 0 8px rgba(0, 240, 255, 1);
+}
+
+input[type="range"].dock-slider.paused::-webkit-slider-thumb {
+  border-color: var(--text-2);
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.4);
+}
+
+input[type="range"].dock-slider::-moz-range-progress {
+  background: linear-gradient(to right, var(--neon-cyan, #00f0ff), var(--accent, #19e68c));
+  height: 6px;
+  border-radius: 99px;
+}
+
+input[type="range"].dock-slider::-moz-range-track {
+  background: rgba(255, 255, 255, 0.16);
+  height: 6px;
+  border-radius: 99px;
+}
+
+input[type="range"].dock-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 2.5px solid var(--accent, #19e68c);
+  box-shadow: 0 0 10px rgba(25, 230, 140, 0.9);
+  cursor: pointer;
 }
 
 .dock-content-row {
