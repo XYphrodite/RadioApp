@@ -48,6 +48,13 @@ public sealed class UserRadioPreferences
     /// <summary>"off" | "all" | "one"</summary>
     [JsonPropertyName("player_repeat")]
     public string PlayerRepeat { get; set; } = "all";
+
+    /// <summary>"default" | "artist" | "album" | "title" | "duration"</summary>
+    [JsonPropertyName("player_sort_key")]
+    public string PlayerSortKey { get; set; } = "default";
+
+    [JsonPropertyName("player_sort_asc")]
+    public bool PlayerSortAsc { get; set; } = true;
 }
 
 public sealed class UserRadioStore

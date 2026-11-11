@@ -467,6 +467,18 @@ else
                             @_playerStation ✕
                         </span>
                     }
+                    @if (Store.Preferences.PlayerSortKey != "default")
+                    {
+                        <span class="player-filter-tag sort-tag" @onclick="ResetSort" title="Сбросить сортировку">
+                            @(Store.Preferences.PlayerSortKey switch {
+                                "artist" => $"👤 Автор{(Store.Preferences.PlayerSortAsc ? " А-Я" : " Я-А")}",
+                                "album" => $"💿 Альбом{(Store.Preferences.PlayerSortAsc ? " А-Я" : " Я-А")}",
+                                "title" => $"🎵 Трек{(Store.Preferences.PlayerSortAsc ? " А-Я" : " Я-А")}",
+                                "duration" => $"⏱ Время{(Store.Preferences.PlayerSortAsc ? " ▲" : " ▼")}",
+                                _ => ""
+                            }) ✕
+                        </span>
+                    }
                 </div>
 
                 <div class="player-head-right">
@@ -492,13 +504,41 @@ else
                     }
                 </div>
 
-                <select class="server-input player-select" @bind="PlayerStationFilter">
-                    <option value="">Все волны (@FormatInt(Engine.LibraryTracks.Count) тр.)</option>
-                    @foreach (var sn in Engine.StationNames)
-                    {
-                        <option value="@sn">@sn</option>
-                    }
-                </select>
+                <div class="player-filter-actions">
+                    <select class="server-input player-select" @bind="PlayerStationFilter">
+                        <option value="">Все волны (@FormatInt(Engine.LibraryTracks.Count) тр.)</option>
+                        @foreach (var sn in Engine.StationNames)
+                        {
+                            <option value="@sn">@sn</option>
+                        }
+                    </select>
+
+                    <div class="sort-tabs player-sort-tabs" title="Сортировка фонотеки">
+                        <button class="sort-tab @(Store.Preferences.PlayerSortKey == "artist" ? "active" : "")"
+                                @onclick='() => ToggleSort("artist")'
+                                title="Сортировать по авторам (артистам)">
+                            👤 Автор@(GetSortArrow("artist"))
+                        </button>
+                        <button class="sort-tab @(Store.Preferences.PlayerSortKey == "album" ? "active" : "")"
+                                @onclick='() => ToggleSort("album")'
+                                title="Сортировать по альбомам">
+                            💿 Альбом@(GetSortArrow("album"))
+                        </button>
+                        <button class="sort-tab hide-xs @(Store.Preferences.PlayerSortKey == "title" ? "active" : "")"
+                                @onclick='() => ToggleSort("title")'
+                                title="Сортировать по названиям треков">
+                            🎵 Трек@(GetSortArrow("title"))
+                        </button>
+                        @if (Store.Preferences.PlayerSortKey != "default")
+                        {
+                            <button class="sort-tab btn-reset-sort"
+                                    @onclick="ResetSort"
+                                    title="Сбросить сортировку (по каталогу)">
+                                ✕
+                            </button>
+                        }
+                    </div>
+                </div>
             </div>
 
             <div class="player-tracks-list">
@@ -524,11 +564,11 @@ else
                         <div class="ptr-info">
                             <div class="ptr-title" title="@t.DisplayTitle">@t.DisplayTitle</div>
                             <div class="ptr-sub" title="@t.Artist · @t.Album">
-                                <span class="ptr-artist">@t.Artist</span>
+                                <span class="ptr-artist @(Store.Preferences.PlayerSortKey == "artist" ? "sort-highlight" : "")">@t.Artist</span>
                                 @if (!string.IsNullOrWhiteSpace(t.Album))
                                 {
                                     <span class="ptr-sep">·</span>
-                                    <span class="ptr-album">@t.Album</span>
+                                    <span class="ptr-album @(Store.Preferences.PlayerSortKey == "album" ? "sort-highlight" : "")">@t.Album</span>
                                 }
                             </div>
                         </div>
@@ -810,6 +850,38 @@ else
             _playerShown = PlayerPageSize;
             RebuildPlayerList();
         }
+    }
+
+    private void ToggleSort(string key)
+    {
+        if (Store.Preferences.PlayerSortKey == key)
+        {
+            Store.Preferences.PlayerSortAsc = !Store.Preferences.PlayerSortAsc;
+        }
+        else
+        {
+            Store.Preferences.PlayerSortKey = key;
+            Store.Preferences.PlayerSortAsc = true;
+        }
+        Store.Save();
+        _playerShown = PlayerPageSize;
+        RebuildPlayerList();
+    }
+
+    private void ResetSort()
+    {
+        Store.Preferences.PlayerSortKey = "default";
+        Store.Preferences.PlayerSortAsc = true;
+        Store.Save();
+        _playerShown = PlayerPageSize;
+        RebuildPlayerList();
+    }
+
+    private string GetSortArrow(string key)
+    {
+        if (Store.Preferences.PlayerSortKey != key)
+            return "";
+        return Store.Preferences.PlayerSortAsc ? " ▲" : " ▼";
     }
 
     protected override Task OnInitializedAsync()
@@ -1580,7 +1652,58 @@ else
                 t.DisplayTitle.Contains(w, StringComparison.OrdinalIgnoreCase)));
         }
 
-        _filteredTracks = q.ToList();
+        _filteredTracks = ApplySorting(q).ToList();
+    }
+
+    private IEnumerable<RadioTrack> ApplySorting(IEnumerable<RadioTrack> q)
+    {
+        var key = Store.Preferences.PlayerSortKey;
+        var asc = Store.Preferences.PlayerSortAsc;
+
+        return (key, asc) switch
+        {
+            ("artist", true) => q
+                .OrderBy(t => string.IsNullOrWhiteSpace(t.Artist) ? 1 : 0)
+                .ThenBy(t => t.Artist, StringComparer.CurrentCultureIgnoreCase)
+                .ThenBy(t => string.IsNullOrWhiteSpace(t.Album) ? 1 : 0)
+                .ThenBy(t => t.Album, StringComparer.CurrentCultureIgnoreCase)
+                .ThenBy(t => t.DisplayTitle, StringComparer.CurrentCultureIgnoreCase),
+
+            ("artist", false) => q
+                .OrderBy(t => string.IsNullOrWhiteSpace(t.Artist) ? 1 : 0)
+                .ThenByDescending(t => t.Artist, StringComparer.CurrentCultureIgnoreCase)
+                .ThenByDescending(t => t.Album, StringComparer.CurrentCultureIgnoreCase)
+                .ThenByDescending(t => t.DisplayTitle, StringComparer.CurrentCultureIgnoreCase),
+
+            ("album", true) => q
+                .OrderBy(t => string.IsNullOrWhiteSpace(t.Album) ? 1 : 0)
+                .ThenBy(t => t.Album, StringComparer.CurrentCultureIgnoreCase)
+                .ThenBy(t => string.IsNullOrWhiteSpace(t.Artist) ? 1 : 0)
+                .ThenBy(t => t.Artist, StringComparer.CurrentCultureIgnoreCase)
+                .ThenBy(t => t.DisplayTitle, StringComparer.CurrentCultureIgnoreCase),
+
+            ("album", false) => q
+                .OrderBy(t => string.IsNullOrWhiteSpace(t.Album) ? 1 : 0)
+                .ThenByDescending(t => t.Album, StringComparer.CurrentCultureIgnoreCase)
+                .ThenByDescending(t => t.Artist, StringComparer.CurrentCultureIgnoreCase)
+                .ThenByDescending(t => t.DisplayTitle, StringComparer.CurrentCultureIgnoreCase),
+
+            ("title", true) => q
+                .OrderBy(t => t.DisplayTitle, StringComparer.CurrentCultureIgnoreCase)
+                .ThenBy(t => t.Artist, StringComparer.CurrentCultureIgnoreCase),
+
+            ("title", false) => q
+                .OrderByDescending(t => t.DisplayTitle, StringComparer.CurrentCultureIgnoreCase)
+                .ThenByDescending(t => t.Artist, StringComparer.CurrentCultureIgnoreCase),
+
+            ("duration", true) => q
+                .OrderBy(t => t.EffectiveDurationSec),
+
+            ("duration", false) => q
+                .OrderByDescending(t => t.EffectiveDurationSec),
+
+            _ => q
+        };
     }
 
     private void RestorePlayerTrack()
