@@ -600,7 +600,7 @@ else
         </section>
 
         <!-- 2. СЕЙЧАС ИГРАЕТ (КОМПАКТНЫЙ ПЛЕЕР СНИЗУ) -->
-        <footer class="player-bottom-dock @(_dockCollapsed ? "collapsed" : "")">
+        <footer class="player-bottom-dock">
             <div class="dock-scrub-row">
                 <span class="dock-time">@FormatTime(shownPos)</span>
                 <input type="range"
@@ -682,9 +682,9 @@ else
                     </button>
                 </div>
 
-                <div class="dock-actions">
-                    @if (!IsAndroid)
-                    {
+                @if (!IsAndroid)
+                {
+                    <div class="dock-actions">
                         <div class="dock-vol hide-mobile">
                             <span>🔊</span>
                             <input type="range"
@@ -694,13 +694,8 @@ else
                                    value="@VolumePercent"
                                    @oninput="OnVolumeInputAsync" />
                         </div>
-                    }
-                    <button class="btn-dock-btn btn-collapse"
-                            @onclick="ToggleDockCollapse"
-                            title="@(_dockCollapsed ? "Развернуть панель плеера" : "Свернуть панель плеера")">
-                        @(_dockCollapsed ? "▲" : "▼")
-                    </button>
-                </div>
+                    </div>
+                }
             </div>
         </footer>
     </main>
@@ -794,16 +789,10 @@ else
     private bool IsPlayerMode => string.Equals(Store.Preferences.AppMode, "player", StringComparison.OrdinalIgnoreCase);
 
     private bool _libraryFullscreen;
-    private bool _dockCollapsed;
 
     private void ToggleLibraryFullscreen()
     {
         _libraryFullscreen = !_libraryFullscreen;
-    }
-
-    private void ToggleDockCollapse()
-    {
-        _dockCollapsed = !_dockCollapsed;
     }
 
     private void ClearPlayerSearch()
@@ -1753,7 +1742,6 @@ else
             return;
         }
 
-        _dockCollapsed = false;
         await PlayTrackAsync(t, rebuildQueue: true);
     }
 
