@@ -1255,8 +1255,10 @@ input[type="range"].vol-slider::-webkit-slider-thumb {
     padding: calc(10px + env(safe-area-inset-top, 0px)) calc(12px + env(safe-area-inset-right, 0px)) calc(22px + env(safe-area-inset-bottom, 0px)) calc(12px + env(safe-area-inset-left, 0px));
   }
   .app-shell.player-mode {
+    height: 100%;
     height: 100vh;
     height: 100dvh;
+    max-height: 100dvh;
     min-height: 0;
     overflow: hidden;
     grid-template-rows: auto 1fr;
@@ -1751,6 +1753,7 @@ input[type="range"].vol-slider::-webkit-slider-thumb {
 /* Track list */
 .player-tracks-list {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 8px 10px 16px;
   display: flex;
