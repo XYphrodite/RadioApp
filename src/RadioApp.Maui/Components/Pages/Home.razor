@@ -481,31 +481,6 @@ else
                     <span class="player-count-badge">
                         @(_libraryView == "tracks" ? $"{FormatInt(_filteredTracks.Count)} тр." : $"{FormatInt(_cachedArtists.Count > 0 ? _cachedArtists.Count : GetAvailableArtistsCount())} арт.")
                     </span>
-
-                    @if (!string.IsNullOrEmpty(_playerStation))
-                    {
-                        <span class="player-filter-tag" @onclick='() => PlayerStationFilter = ""' title="Сбросить фильтр по волне">
-                            📻 @_playerStation ✕
-                        </span>
-                    }
-                    @if (!string.IsNullOrEmpty(_playerArtist))
-                    {
-                        <span class="player-filter-tag artist-active-tag" @onclick="ClearPlayerArtist" title="Сбросить фильтр по исполнителю">
-                            👤 @_playerArtist ✕
-                        </span>
-                    }
-                    @if (Store.Preferences.PlayerSortKey != "default" && _libraryView == "tracks")
-                    {
-                        <span class="player-filter-tag sort-tag" @onclick="ResetSort" title="Сбросить сортировку">
-                            @(Store.Preferences.PlayerSortKey switch {
-                                "artist" => $"👤 Автор{(Store.Preferences.PlayerSortAsc ? " А-Я" : " Я-А")}",
-                                "album" => $"💿 Альбом{(Store.Preferences.PlayerSortAsc ? " А-Я" : " Я-А")}",
-                                "title" => $"🎵 Трек{(Store.Preferences.PlayerSortAsc ? " А-Я" : " Я-А")}",
-                                "duration" => $"⏱ Время{(Store.Preferences.PlayerSortAsc ? " ▲" : " ▼")}",
-                                _ => ""
-                            }) ✕
-                        </span>
-                    }
                 </div>
 
                 <div class="player-head-right">
@@ -542,7 +517,7 @@ else
 
                     <div class="player-artist-picker-wrap">
                         <button type="button"
-                                class="player-select player-artist-btn @(!string.IsNullOrEmpty(_playerArtist) ? "has-selection" : "")"
+                                class="player-artist-btn @(!string.IsNullOrEmpty(_playerArtist) ? "has-selection" : "")"
                                 @onclick="OpenArtistPicker"
                                 title="Список артистов с быстрым поиском">
                             <span class="pab-left">

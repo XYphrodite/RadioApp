@@ -1647,16 +1647,25 @@ input[type="range"].vol-slider::-webkit-slider-thumb {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 18px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--border);
-  gap: 12px;
+  gap: 8px;
+  overflow: hidden;
 }
 
 .player-head-left {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.player-head-right {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
 }
 
 .player-count-badge {
@@ -2283,22 +2292,21 @@ input[type="range"].dock-slider::-moz-range-thumb {
 
 /* ────────── Player Artist Picker Bar (Under Station Dropdown) ────────── */
 .player-artist-picker-wrap {
-  position: relative;
   display: flex;
   align-items: center;
+  gap: 6px;
   width: 100%;
   flex: 0 0 36px;
 }
 
 .player-artist-btn {
-  width: 100%;
-  max-width: 100%;
+  flex: 1;
+  min-width: 0;
   height: 36px;
-  flex: 0 0 36px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 10px;
+  padding: 0 12px;
   font-size: 12px;
   cursor: pointer;
   text-align: left;
@@ -2373,25 +2381,24 @@ input[type="range"].dock-slider::-moz-range-thumb {
 }
 
 .player-artist-clear-btn {
-  position: absolute;
-  right: 28px;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.12);
-  border: none;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border);
   color: var(--text-1);
-  font-size: 11px;
+  font-size: 13px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  z-index: 2;
   transition: all 0.15s ease;
 }
 
 .player-artist-clear-btn:hover {
   background: var(--neon-pink);
+  border-color: var(--neon-pink);
   color: #fff;
 }
 
