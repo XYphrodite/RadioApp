@@ -602,6 +602,13 @@ else
                                     <div class="pac-sub">@FormatInt(a.TrackCount) треков в ротации</div>
                                 </div>
                                 <div class="pac-action">
+                                    <button type="button"
+                                            class="pac-play-btn"
+                                            @onclick="() => PlayArtistImmediatelyAsync(a.Name)"
+                                            @onclick:stopPropagation="true"
+                                            title="Слушать треки этого артиста прямо сейчас">
+                                        ▶ Слушать
+                                    </button>
                                     <span>Показать треки ›</span>
                                 </div>
                             </div>
@@ -975,6 +982,7 @@ else
             _playerSearch = value ?? "";
             _playerShown = PlayerPageSize;
             RebuildPlayerList();
+            RebuildQueueForCurrentFilter(_playerTrack);
         }
     }
 
@@ -983,14 +991,21 @@ else
         get => _playerStation;
         set
         {
-            _playerStation = value ?? "";
-            _playerShown = PlayerPageSize;
-            RebuildAvailableArtists();
-            if (!string.IsNullOrEmpty(_playerArtist) && !_cachedArtists.Any(a => string.Equals(a.Name, _playerArtist, StringComparison.OrdinalIgnoreCase)))
+            if (_playerStation != value)
             {
-                _playerArtist = "";
+                _playerStation = value ?? "";
+                Store.Preferences.PlayerStation = _playerStation;
+                Store.Save();
+                _playerShown = PlayerPageSize;
+                RebuildAvailableArtists();
+                if (!string.IsNullOrEmpty(_playerArtist) && !_cachedArtists.Any(a => string.Equals(a.Name, _playerArtist, StringComparison.OrdinalIgnoreCase)))
+                {
+                    _playerArtist = "";
+                    Store.Preferences.PlayerArtist = "";
+                }
+                RebuildPlayerList();
+                RebuildQueueForCurrentFilter(_playerTrack);
             }
-            RebuildPlayerList();
         }
     }
 
@@ -1074,18 +1089,33 @@ else
     private void SelectArtist(string? artist)
     {
         _playerArtist = artist?.Trim() ?? "";
+        Store.Preferences.PlayerArtist = _playerArtist;
+        Store.Save();
         _artistPickerOpen = false;
         _artistSearchFilter = "";
         _playerShown = PlayerPageSize;
         _libraryView = "tracks";
         RebuildPlayerList();
+        RebuildQueueForCurrentFilter();
+    }
+
+    private async Task PlayArtistImmediatelyAsync(string? artist)
+    {
+        SelectArtist(artist);
+        if (_playerQueue.Count > 0)
+        {
+            await PlayTrackAsync(_playerQueue[0], rebuildQueue: false);
+        }
     }
 
     private void ClearPlayerArtist()
     {
         _playerArtist = "";
+        Store.Preferences.PlayerArtist = "";
+        Store.Save();
         _playerShown = PlayerPageSize;
         RebuildPlayerList();
+        RebuildQueueForCurrentFilter(_playerTrack);
     }
 
     private void FilterByArtistFromTrack(string? artist)
@@ -1150,6 +1180,7 @@ else
         Store.Save();
         _playerShown = PlayerPageSize;
         RebuildPlayerList();
+        RebuildQueueForCurrentFilter(_playerTrack);
     }
 
     private void ResetSort()
@@ -1159,6 +1190,7 @@ else
         Store.Save();
         _playerShown = PlayerPageSize;
         RebuildPlayerList();
+        RebuildQueueForCurrentFilter(_playerTrack);
     }
 
     private string GetSortArrow(string key)
@@ -1172,6 +1204,8 @@ else
     {
         _serverUrlInput = Store.Preferences.ServerBaseUrl;
         _authKeyInput = Store.Preferences.TailscaleAuthKey;
+        _playerArtist = Store.Preferences.PlayerArtist ?? "";
+        _playerStation = Store.Preferences.PlayerStation ?? "";
         Tailscale.StateChanged += OnTailscaleStateChanged;
         MediaBridge.PlayPauseRequested += OnNativePlayPauseRequested;
         MediaBridge.TogglePlayPauseRequested += OnNativeTogglePlayPauseRequested;
@@ -1663,10 +1697,22 @@ else
 
     private async Task TogglePowerAsync()
     {
-        if (IsPlayerMode && _playerTrack is null && !Store.Preferences.PowerOn && _filteredTracks.Count > 0)
+        if (IsPlayerMode && !Store.Preferences.PowerOn)
         {
-            await PlayTrackAsync(_filteredTracks[0], rebuildQueue: true);
-            return;
+            if (_playerTrack is null || !_playerQueue.Any(t => t.Id == _playerTrack.Id))
+            {
+                if (_playerQueue.Count == 0 && _filteredTracks.Count > 0)
+                {
+                    RebuildQueueForCurrentFilter();
+                }
+
+                if (_playerQueue.Count > 0)
+                {
+                    var start = _playerIndex >= 0 && _playerIndex < _playerQueue.Count ? _playerQueue[_playerIndex] : _playerQueue[0];
+                    await PlayTrackAsync(start, rebuildQueue: false);
+                    return;
+                }
+            }
         }
 
         Store.Preferences.PowerOn = !Store.Preferences.PowerOn;
@@ -1895,6 +1941,7 @@ else
         {
             RebuildPlayerList();
             RestorePlayerTrack();
+            RebuildQueueForCurrentFilter(_playerTrack);
             Store.Preferences.PowerOn = _playerTrack is not null;
         }
         else
@@ -1913,7 +1960,10 @@ else
         RebuildAvailableArtists();
         RebuildPlayerList();
         if (IsPlayerMode)
+        {
             RestorePlayerTrack();
+            RebuildQueueForCurrentFilter(_playerTrack);
+        }
     }
 
     private void RebuildPlayerList()
@@ -2006,16 +2056,23 @@ else
         _playerTrack = saved;
         _playerPos = 0;
         _playerDur = saved.EffectiveDurationSec;
-        BuildPlayerQueue(saved);
+        RebuildQueueForCurrentFilter(saved);
     }
 
-    private void BuildPlayerQueue(RadioTrack start)
+    private void RebuildQueueForCurrentFilter(RadioTrack? preferredStart = null)
     {
-        IReadOnlyList<RadioTrack> src = _filteredTracks.Any(t => t.Id == start.Id)
-            ? _filteredTracks
-            : Engine.LibraryTracks;
+        if (!Engine.IsLoaded)
+        {
+            _playerQueue = new();
+            _playerIndex = -1;
+            return;
+        }
 
-        var list = new List<RadioTrack>(src);
+        var source = _filteredTracks.Count > 0 ? _filteredTracks : Engine.LibraryTracks;
+        var list = new List<RadioTrack>(source);
+
+        var start = preferredStart ?? (_playerTrack is not null && _filteredTracks.Any(t => t.Id == _playerTrack.Id) ? _playerTrack : null);
+
         if (Store.Preferences.PlayerShuffle)
         {
             for (int i = list.Count - 1; i > 0; i--)
@@ -2024,33 +2081,58 @@ else
                 (list[i], list[j]) = (list[j], list[i]);
             }
 
-            int at = list.FindIndex(t => t.Id == start.Id);
-            if (at > 0)
-                (list[0], list[at]) = (list[at], list[0]);
+            if (start is not null)
+            {
+                int at = list.FindIndex(t => t.Id == start.Id);
+                if (at > 0)
+                {
+                    (list[0], list[at]) = (list[at], list[0]);
+                }
+            }
         }
 
         _playerQueue = list;
-        _playerIndex = Math.Max(0, list.FindIndex(t => t.Id == start.Id));
+        if (start is not null)
+        {
+            _playerIndex = Math.Max(0, list.FindIndex(t => t.Id == start.Id));
+        }
+        else
+        {
+            _playerIndex = -1;
+        }
     }
 
     private async Task PlayFromListAsync(RadioTrack t)
     {
         if (_playerTrack is not null && _playerTrack.Id == t.Id)
         {
-            await TogglePowerAsync();
+            if (!Store.Preferences.PowerOn)
+            {
+                Store.Preferences.PowerOn = true;
+                Store.Save();
+                await SyncAudioAsync(0, forceSync: true);
+            }
+            else
+            {
+                await TogglePowerAsync();
+            }
             return;
         }
 
-        await PlayTrackAsync(t, rebuildQueue: true);
+        RebuildQueueForCurrentFilter(preferredStart: t);
+        await PlayTrackAsync(t, rebuildQueue: false);
     }
 
     private async Task PlayTrackAsync(RadioTrack t, bool rebuildQueue)
     {
-        int idx = rebuildQueue ? -1 : _playerQueue.FindIndex(x => x.Id == t.Id);
-        if (idx < 0)
-            BuildPlayerQueue(t);
+        if (rebuildQueue || _playerQueue.Count == 0 || !_playerQueue.Any(x => x.Id == t.Id))
+        {
+            RebuildQueueForCurrentFilter(preferredStart: t);
+        }
         else
-            _playerIndex = idx;
+        {
+            _playerIndex = Math.Max(0, _playerQueue.FindIndex(x => x.Id == t.Id));
+        }
 
         _playerTrack = t;
         _playerPos = 0;
@@ -2066,8 +2148,14 @@ else
     {
         if (_playerQueue.Count == 0)
         {
-            if (_playerTrack is null && _filteredTracks.Count > 0)
-                await PlayTrackAsync(_filteredTracks[0], rebuildQueue: true);
+            if (_filteredTracks.Count > 0)
+            {
+                RebuildQueueForCurrentFilter();
+                if (_playerQueue.Count > 0)
+                {
+                    await PlayTrackAsync(_playerQueue[0], rebuildQueue: false);
+                }
+            }
             return;
         }
 
@@ -2078,7 +2166,16 @@ else
         }
 
         int n = _playerQueue.Count;
-        int next = ((_playerIndex + dir) % n + n) % n;
+        int next;
+        if (_playerIndex < 0 || _playerIndex >= n)
+        {
+            next = 0;
+        }
+        else
+        {
+            next = ((_playerIndex + dir) % n + n) % n;
+        }
+
         await PlayTrackAsync(_playerQueue[next], rebuildQueue: false);
     }
 
@@ -2094,7 +2191,7 @@ else
             return;
         }
 
-        if (repeat == "off" && _playerIndex + 1 >= _playerQueue.Count)
+        if (repeat == "off" && _playerIndex >= 0 && _playerIndex + 1 >= _playerQueue.Count)
         {
             _playerPos = 0;
             Store.Preferences.PowerOn = false;
@@ -2137,8 +2234,7 @@ else
     {
         Store.Preferences.PlayerShuffle = !Store.Preferences.PlayerShuffle;
         Store.Save();
-        if (_playerTrack is not null)
-            BuildPlayerQueue(_playerTrack);
+        RebuildQueueForCurrentFilter(_playerTrack);
     }
 
     private void CyclePlayerRepeat()
@@ -2189,7 +2285,7 @@ else
             _playerPos = 0;
             _playerDur = _playerTrack.EffectiveDurationSec;
             Store.Preferences.PlayerTrackId = _playerTrack.Id;
-            BuildPlayerQueue(_playerTrack);
+            RebuildQueueForCurrentFilter(_playerTrack);
             startSec = 0;
         }
 

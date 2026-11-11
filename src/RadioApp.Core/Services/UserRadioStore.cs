@@ -55,6 +55,12 @@ public sealed class UserRadioPreferences
 
     [JsonPropertyName("player_sort_asc")]
     public bool PlayerSortAsc { get; set; } = true;
+
+    [JsonPropertyName("player_artist")]
+    public string PlayerArtist { get; set; } = "";
+
+    [JsonPropertyName("player_station")]
+    public string PlayerStation { get; set; } = "";
 }
 
 public sealed class UserRadioStore

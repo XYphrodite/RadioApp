@@ -2695,8 +2695,30 @@ input[type="range"].dock-slider::-moz-range-thumb {
   color: var(--neon-cyan);
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
   flex-shrink: 0;
+}
+
+.pac-play-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: rgba(0, 240, 255, 0.12);
+  border: 1px solid rgba(0, 240, 255, 0.35);
+  color: var(--neon-cyan);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.14s ease;
+  white-space: nowrap;
+}
+
+.pac-play-btn:hover {
+  background: var(--neon-cyan);
+  color: #05060b;
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.4);
 }
 
 /* Keep the top bar inside the viewport on phones (mode switch made it wider) */
