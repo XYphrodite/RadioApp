@@ -166,9 +166,11 @@
     </header>
 
     <!-- MAIN WORKSPACE -->
-    <main class="workspace">
-        <!-- LEFT: FM RECEIVER -->
-        <section class="receiver-col @(IsPlayerMode ? "mode-hidden" : "")">
+    @if (!IsPlayerMode)
+    {
+        <main class="workspace">
+            <!-- LEFT: FM RECEIVER -->
+            <section class="receiver-col">
             <!-- FM ANALOG/DIGITAL SCALE -->
             <div class="tuner-box">
                 <div class="tuner-header">
@@ -405,7 +407,7 @@
         </section>
 
         <!-- RIGHT: ALL 11 STATIONS LIVE BOARD -->
-        <aside class="stations-panel @(IsPlayerMode ? "mode-hidden" : "")">
+        <aside class="stations-panel">
             <div class="panel-head">
                 <span class="panel-title">Все @(_allStations.Count > 0 ? _allStations.Count : 11) станций (живой эфир)</span>
                 <div class="sort-tabs">
@@ -442,175 +444,226 @@
                 }
             </div>
         </aside>
-        @if (IsPlayerMode)
-        {
-            var pt = _playerTrack;
+    </main>
+}
+else
+{
+    var pt = _playerTrack;
+    bool showPlayerCover = pt is not null && !_coverFailedTrackIds.Contains(pt.Id);
+    double shownPos = _isSeeking ? _seekPreview : _playerPos;
+    int seekMax = (int)Math.Max(1, Math.Ceiling(_playerDur));
 
-            <!-- MEDIA PLAYER: NOW PLAYING -->
-            <section class="receiver-col player-col">
-                <div class="deck-card player-deck">
-                    @if (pt is not null)
+    <!-- MAIN WORKSPACE: MEDIA PLAYER -->
+    <main class="player-shell @(_libraryFullscreen ? "is-fullscreen" : "")">
+        <!-- 1. ФОНОТЕКА (ОСНОВНАЯ ОБЛАСТЬ, РАЗВОРАЧИВАЕТСЯ НА ВЕСЬ ЭКРАН) -->
+        <section class="player-library-panel">
+            <div class="panel-head player-head">
+                <div class="player-head-left">
+                    <span class="panel-title">Фонотека</span>
+                    <span class="player-count-badge">@FormatInt(_filteredTracks.Count) тр.</span>
+                    @if (!string.IsNullOrEmpty(_playerStation))
                     {
-                        bool showPlayerCover = !_coverFailedTrackIds.Contains(pt.Id);
-                        double shownPos = _isSeeking ? _seekPreview : _playerPos;
-                        int seekMax = (int)Math.Max(1, Math.Ceiling(_playerDur));
-
-                        <div class="now-playing-stage">
-                            <div class="vinyl-wrap">
-                                <div class="vinyl-disc @(Store.Preferences.PowerOn ? "" : "paused")">
-                                    <div class="vinyl-grooves"></div>
-                                    @if (showPlayerCover)
-                                    {
-                                        <img class="vinyl-cover"
-                                             @key="pt.Id"
-                                             src="@Engine.GetCoverUrl(pt)"
-                                             decoding="async"
-                                             alt=""
-                                             @onerror="() => OnCoverLoadError(pt.Id)" />
-                                        <div class="vinyl-spindle"></div>
-                                    }
-                                </div>
-                                @if (!showPlayerCover)
-                                {
-                                    <div class="vinyl-emblem">🎵</div>
-                                }
-                            </div>
-
-                            <div class="track-meta">
-                                <div class="on-air-eyebrow">
-                                    <span>@(Store.Preferences.PowerOn ? "▶ СЕЙЧАС ИГРАЕТ" : "⏸ ПАУЗА")</span>
-                                    <span>· @(_playerIndex + 1) / @_playerQueue.Count</span>
-                                </div>
-                                <div class="track-title" title="@pt.DisplayTitle">@pt.DisplayTitle</div>
-                                <div class="track-artist" title="@pt.Artist">@pt.Artist</div>
-                                <div class="track-album" title="@pt.Album">@pt.Album</div>
-
-                                <div class="rds-badges player-badges">
-                                    @if (!string.IsNullOrWhiteSpace(pt.Genre))
-                                    {
-                                        <span class="rds-tag hi">@pt.Genre</span>
-                                    }
-                                    <span class="rds-tag">@pt.CodecBadge</span>
-                                </div>
-
-                                <div class="player-seek">
-                                    <span>@FormatTime(shownPos)</span>
-                                    <input type="range"
-                                           class="vol-slider seek-slider"
-                                           min="0"
-                                           max="@seekMax"
-                                           step="1"
-                                           value="@((int)shownPos)"
-                                           @oninput="OnSeekInput"
-                                           @onchange="OnSeekCommitAsync" />
-                                    <span>@FormatTime(_playerDur)</span>
-                                </div>
-                            </div>
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="deck-placeholder">
-                            @(Engine.IsLoaded
-                                ? "ВЫБЕРИ ТРЕК В СПИСКЕ — ПЛЕЕР ИГРАЕТ ВСЮ ФОНОТЕКУ"
-                                : (_isLoadingCatalog || Tailscale.IsBusy ? "ПОДКЛЮЧЕНИЕ К СЕРВЕРУ ФОНОТЕКИ..." : "НЕТ СВЯЗИ С СЕРВЕРОМ ФОНОТЕКИ"))
-                        </div>
+                        <span class="player-filter-tag" @onclick='() => PlayerStationFilter = ""' title="Сбросить фильтр по волне">
+                            @_playerStation ✕
+                        </span>
                     }
                 </div>
 
-                <div class="controls-bar player-controls">
-                    <div class="transport-group">
-                        <button class="btn-ctrl @(Store.Preferences.PlayerShuffle ? "liked" : "")"
-                                @onclick="TogglePlayerShuffle"
-                                title="Случайный порядок">
-                            🔀 <span class="hide-xs">Shuffle</span>
-                        </button>
-                        <button class="btn-ctrl" @onclick="() => PlayerStepAsync(-1)" title="Предыдущий трек [←]">⏮</button>
-                        <button class="btn-power @(Store.Preferences.PowerOn ? "" : "off")"
-                                @onclick="TogglePowerAsync"
-                                title="Играть / пауза [Space]">
-                            <span>@(Store.Preferences.PowerOn ? "⏸ ПАУЗА" : "▶ ИГРАТЬ")</span>
-                        </button>
-                        <button class="btn-ctrl" @onclick="() => PlayerStepAsync(1)" title="Следующий трек [→]">⏭</button>
-                        <button class="btn-ctrl @(Store.Preferences.PlayerRepeat != "off" ? "liked" : "")"
-                                @onclick="CyclePlayerRepeat"
-                                title="Повтор: выкл / всё / один трек">
-                            @(Store.Preferences.PlayerRepeat switch { "one" => "🔂", _ => "🔁" })
-                            <span class="hide-xs">@(Store.Preferences.PlayerRepeat switch { "one" => "Один", "all" => "Всё", _ => "Выкл" })</span>
-                        </button>
-                    </div>
-
-                    @if (!IsAndroid)
-                    {
-                        <div class="audio-group">
-                            <div class="vol-wrap">
-                                <span>🔊</span>
-                                <input type="range"
-                                       class="vol-slider"
-                                       min="0"
-                                       max="100"
-                                       value="@VolumePercent"
-                                       @oninput="OnVolumeInputAsync" />
-                                <span>@VolumePercent%</span>
-                            </div>
-                        </div>
-                    }
+                <div class="player-head-right">
+                    <button class="btn-ctrl btn-fullscreen-toggle"
+                            @onclick="ToggleLibraryFullscreen"
+                            title="@(_libraryFullscreen ? "Свернуть в обычный вид" : "Развернуть фонотеку на весь экран")">
+                        @(_libraryFullscreen ? "↙ Свернуть" : "⛶ Во весь экран")
+                    </button>
                 </div>
-            </section>
+            </div>
 
-            <!-- MEDIA PLAYER: LIBRARY -->
-            <aside class="stations-panel player-panel">
-                <div class="panel-head player-head">
-                    <span class="panel-title">Фонотека · @FormatInt(_filteredTracks.Count) тр.</span>
-                </div>
-
-                <div class="player-filters">
-                    <input class="server-input"
+            <div class="player-filters">
+                <div class="search-input-wrap">
+                    <input class="server-input player-search-input"
                            type="text"
                            placeholder="🔎 Поиск: артист, трек, альбом"
                            @bind="PlayerSearch"
                            @bind:event="oninput" />
-                    <select class="server-input player-select" @bind="PlayerStationFilter">
-                        <option value="">Вся фонотека</option>
-                        @foreach (var sn in Engine.StationNames)
-                        {
-                            <option value="@sn">@sn</option>
-                        }
-                    </select>
+                    @if (!string.IsNullOrEmpty(_playerSearch))
+                    {
+                        <button class="search-clear-btn" @onclick="ClearPlayerSearch" title="Очистить поиск">✕</button>
+                    }
                 </div>
 
-                <div class="stations-list">
-                    @foreach (var t in _filteredTracks.Take(_playerShown))
+                <select class="server-input player-select" @bind="PlayerStationFilter">
+                    <option value="">Все волны (@FormatInt(Engine.LibraryTracks.Count) тр.)</option>
+                    @foreach (var sn in Engine.StationNames)
                     {
-                        bool isCur = pt is not null && pt.Id == t.Id;
-                        <div class="st-card track-row @(isCur ? "active" : "")"
-                             @key="t.Id"
-                             style="--st-color: var(--accent)"
-                             @onclick="() => PlayFromListAsync(t)">
-                            <div class="st-row-1">
-                                <div class="st-title-wrap">
-                                    <span class="st-name">@(isCur && Store.Preferences.PowerOn ? "▶ " : "")@t.DisplayTitle</span>
-                                </div>
-                                <span class="st-count">@FormatTime(t.EffectiveDurationSec)</span>
+                        <option value="@sn">@sn</option>
+                    }
+                </select>
+            </div>
+
+            <div class="player-tracks-list">
+                @foreach (var t in _filteredTracks.Take(_playerShown))
+                {
+                    bool isCur = pt is not null && pt.Id == t.Id;
+                    <div class="player-track-row @(isCur ? "active" : "")"
+                         @key="t.Id"
+                         @onclick="() => PlayFromListAsync(t)">
+                        <div class="ptr-idx">
+                            @if (isCur)
+                            {
+                                <span class="ptr-eq @(Store.Preferences.PowerOn ? "playing" : "paused")">
+                                    <span></span><span></span><span></span>
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="ptr-play-hint">▶</span>
+                            }
+                        </div>
+
+                        <div class="ptr-info">
+                            <div class="ptr-title" title="@t.DisplayTitle">@t.DisplayTitle</div>
+                            <div class="ptr-sub" title="@t.Artist · @t.Album">
+                                <span class="ptr-artist">@t.Artist</span>
+                                @if (!string.IsNullOrWhiteSpace(t.Album))
+                                {
+                                    <span class="ptr-sep">·</span>
+                                    <span class="ptr-album">@t.Album</span>
+                                }
                             </div>
-                            <div class="st-row-2">@(t.Artist + (string.IsNullOrWhiteSpace(t.Album) ? "" : " · " + t.Album))</div>
+                        </div>
+
+                        <div class="ptr-meta-right">
+                            @if (!string.IsNullOrWhiteSpace(t.Genre))
+                            {
+                                <span class="ptr-genre hide-xs">@t.Genre</span>
+                            }
+                            <span class="ptr-codec hide-xs">@t.CodecBadge</span>
+                            <span class="ptr-time">@FormatTime(t.EffectiveDurationSec)</span>
+                        </div>
+                    </div>
+                }
+
+                @if (_filteredTracks.Count > _playerShown)
+                {
+                    <button class="btn-ctrl player-more" @onclick="ShowMorePlayerTracks">
+                        Показать ещё (@FormatInt(_filteredTracks.Count - _playerShown))
+                    </button>
+                }
+                else if (_filteredTracks.Count == 0)
+                {
+                    <div class="deck-placeholder">
+                        @(Engine.IsLoaded ? "Ничего не найдено по вашему запросу" : "Каталог не загружен")
+                    </div>
+                }
+            </div>
+        </section>
+
+        <!-- 2. СЕЙЧАС ИГРАЕТ (КОМПАКТНЫЙ ПЛЕЕР СНИЗУ) -->
+        <footer class="player-bottom-dock @(_dockCollapsed ? "collapsed" : "")">
+            <div class="dock-scrub-row">
+                <span class="dock-time">@FormatTime(shownPos)</span>
+                <input type="range"
+                       class="vol-slider dock-slider"
+                       min="0"
+                       max="@seekMax"
+                       step="1"
+                       value="@((int)shownPos)"
+                       @oninput="OnSeekInput"
+                       @onchange="OnSeekCommitAsync" />
+                <span class="dock-time">@FormatTime(_playerDur)</span>
+            </div>
+
+            <div class="dock-content-row">
+                <div class="dock-track-summary">
+                    <div class="dock-cover-disc @(Store.Preferences.PowerOn ? "spinning" : "paused")">
+                        @if (showPlayerCover && pt is not null)
+                        {
+                            <img class="dock-cover-img"
+                                 @key="pt.Id"
+                                 src="@Engine.GetCoverUrl(pt)"
+                                 decoding="async"
+                                 alt=""
+                                 @onerror="() => OnCoverLoadError(pt.Id)" />
+                            <div class="dock-cover-center"></div>
+                        }
+                        else
+                        {
+                            <span class="dock-cover-icon">🎵</span>
+                        }
+                    </div>
+
+                    <div class="dock-track-text">
+                        @if (pt is not null)
+                        {
+                            <div class="dock-title" title="@pt.DisplayTitle">@pt.DisplayTitle</div>
+                            <div class="dock-sub" title="@pt.Artist · @pt.Album">
+                                <span class="dock-artist">@pt.Artist</span>
+                                @if (!string.IsNullOrWhiteSpace(pt.Album))
+                                {
+                                    <span class="dock-sep">·</span>
+                                    <span class="dock-album">@pt.Album</span>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="dock-title">Фонотека готова</div>
+                            <div class="dock-sub">Выберите трек из списка выше</div>
+                        }
+                    </div>
+                </div>
+
+                <div class="dock-controls">
+                    <button class="btn-dock-btn hide-xs @(Store.Preferences.PlayerShuffle ? "liked" : "")"
+                            @onclick="TogglePlayerShuffle"
+                            title="Случайный порядок (Shuffle)">
+                        🔀
+                    </button>
+                    <button class="btn-dock-btn"
+                            @onclick="() => PlayerStepAsync(-1)"
+                            title="Предыдущий трек [←]">
+                        ⏮
+                    </button>
+                    <button class="btn-dock-play @(Store.Preferences.PowerOn ? "playing" : "paused")"
+                            @onclick="TogglePowerAsync"
+                            title="Воспроизведение / Пауза [Space]">
+                        @(Store.Preferences.PowerOn ? "⏸" : "▶")
+                    </button>
+                    <button class="btn-dock-btn"
+                            @onclick="() => PlayerStepAsync(1)"
+                            title="Следующий трек [→]">
+                        ⏭
+                    </button>
+                    <button class="btn-dock-btn hide-xs @(Store.Preferences.PlayerRepeat != "off" ? "liked" : "")"
+                            @onclick="CyclePlayerRepeat"
+                            title="@(Store.Preferences.PlayerRepeat switch { "one" => "Повтор одного трека", "all" => "Повтор всей очереди", _ => "Повтор выключен" })">
+                        @(Store.Preferences.PlayerRepeat switch { "one" => "🔂", _ => "🔁" })
+                    </button>
+                </div>
+
+                <div class="dock-actions">
+                    @if (!IsAndroid)
+                    {
+                        <div class="dock-vol hide-mobile">
+                            <span>🔊</span>
+                            <input type="range"
+                                   class="vol-slider dock-vol-slider"
+                                   min="0"
+                                   max="100"
+                                   value="@VolumePercent"
+                                   @oninput="OnVolumeInputAsync" />
                         </div>
                     }
-
-                    @if (_filteredTracks.Count > _playerShown)
-                    {
-                        <button class="btn-ctrl player-more" @onclick="ShowMorePlayerTracks">
-                            Показать ещё (@FormatInt(_filteredTracks.Count - _playerShown))
-                        </button>
-                    }
-                    else if (_filteredTracks.Count == 0)
-                    {
-                        <div class="deck-placeholder">@(Engine.IsLoaded ? "Ничего не найдено" : "Каталог не загружен")</div>
-                    }
+                    <button class="btn-dock-btn btn-collapse"
+                            @onclick="ToggleDockCollapse"
+                            title="@(_dockCollapsed ? "Развернуть панель плеера" : "Свернуть панель плеера")">
+                        @(_dockCollapsed ? "▲" : "▼")
+                    </button>
                 </div>
-            </aside>
-        }
+            </div>
+        </footer>
     </main>
+}
 </div>
 
 <!-- GTA-INSPIRED RADIAL WHEEL OVERLAY -->
@@ -698,6 +751,24 @@
     private const string PlayerAccent = "#19e68c";
 
     private bool IsPlayerMode => string.Equals(Store.Preferences.AppMode, "player", StringComparison.OrdinalIgnoreCase);
+
+    private bool _libraryFullscreen;
+    private bool _dockCollapsed;
+
+    private void ToggleLibraryFullscreen()
+    {
+        _libraryFullscreen = !_libraryFullscreen;
+    }
+
+    private void ToggleDockCollapse()
+    {
+        _dockCollapsed = !_dockCollapsed;
+    }
+
+    private void ClearPlayerSearch()
+    {
+        PlayerSearch = "";
+    }
 
     private List<RadioTrack> _filteredTracks = new();
     private List<RadioTrack> _playerQueue = new();
@@ -1432,11 +1503,18 @@
         switch (action)
         {
             case "wheel":
-                ToggleWheel();
+                if (!IsPlayerMode) ToggleWheel();
                 break;
             case "escape":
-                _wheelOpen = false;
-                _serverPopoverOpen = false;
+                if (_libraryFullscreen)
+                {
+                    _libraryFullscreen = false;
+                }
+                else
+                {
+                    _wheelOpen = false;
+                    _serverPopoverOpen = false;
+                }
                 break;
             case "power":
                 await TogglePowerAsync();
@@ -1551,6 +1629,7 @@
             return;
         }
 
+        _dockCollapsed = false;
         await PlayTrackAsync(t, rebuildQueue: true);
     }
 
