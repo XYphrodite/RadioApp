@@ -460,14 +460,39 @@ else
             <div class="panel-head player-head">
                 <div class="player-head-left">
                     <span class="panel-title">Фонотека</span>
-                    <span class="player-count-badge">@FormatInt(_filteredTracks.Count) тр.</span>
+
+                    <div class="player-view-tabs" role="group" aria-label="Вид фонотеки">
+                        <button type="button"
+                                class="player-view-tab @(_libraryView == "tracks" ? "active" : "")"
+                                @onclick='() => SetLibraryView("tracks")'
+                                title="Список треков">
+                            🎵 Треки
+                        </button>
+                        <button type="button"
+                                class="player-view-tab @(_libraryView == "artists" ? "active" : "")"
+                                @onclick='() => SetLibraryView("artists")'
+                                title="Список исполнителей">
+                            👤 Артисты
+                        </button>
+                    </div>
+
+                    <span class="player-count-badge">
+                        @(_libraryView == "tracks" ? $"{FormatInt(_filteredTracks.Count)} тр." : $"{FormatInt(_cachedArtists.Count > 0 ? _cachedArtists.Count : GetAvailableArtistsCount())} арт.")
+                    </span>
+
                     @if (!string.IsNullOrEmpty(_playerStation))
                     {
                         <span class="player-filter-tag" @onclick='() => PlayerStationFilter = ""' title="Сбросить фильтр по волне">
-                            @_playerStation ✕
+                            📻 @_playerStation ✕
                         </span>
                     }
-                    @if (Store.Preferences.PlayerSortKey != "default")
+                    @if (!string.IsNullOrEmpty(_playerArtist))
+                    {
+                        <span class="player-filter-tag artist-active-tag" @onclick="ClearPlayerArtist" title="Сбросить фильтр по исполнителю">
+                            👤 @_playerArtist ✕
+                        </span>
+                    }
+                    @if (Store.Preferences.PlayerSortKey != "default" && _libraryView == "tracks")
                     {
                         <span class="player-filter-tag sort-tag" @onclick="ResetSort" title="Сбросить сортировку">
                             @(Store.Preferences.PlayerSortKey switch {
@@ -495,12 +520,12 @@ else
                 <div class="search-input-wrap">
                     <input class="server-input player-search-input"
                            type="text"
-                           placeholder="🔎 Поиск: артист, трек, альбом"
-                           @bind="PlayerSearch"
-                           @bind:event="oninput" />
-                    @if (!string.IsNullOrEmpty(_playerSearch))
+                           placeholder="@(_libraryView == "tracks" ? "🔎 Поиск: артист, трек, альбом" : "🔎 Поиск артиста...")"
+                           value="@(_libraryView == "tracks" ? PlayerSearch : _artistSearchFilter)"
+                           @oninput="OnUniversalSearchInput" />
+                    @if (!string.IsNullOrEmpty(_libraryView == "tracks" ? _playerSearch : _artistSearchFilter))
                     {
-                        <button class="search-clear-btn" @onclick="ClearPlayerSearch" title="Очистить поиск">✕</button>
+                        <button class="search-clear-btn" @onclick="ClearUniversalSearch" title="Очистить поиск">✕</button>
                     }
                 </div>
 
@@ -513,90 +538,168 @@ else
                         }
                     </select>
 
-                    <div class="sort-tabs player-sort-tabs" title="Сортировка фонотеки">
-                        <button class="sort-tab @(Store.Preferences.PlayerSortKey == "artist" ? "active" : "")"
-                                @onclick='() => ToggleSort("artist")'
-                                title="Сортировать по авторам (артистам)">
-                            👤 Автор@(GetSortArrow("artist"))
+                    <div class="player-artist-picker-wrap">
+                        <button type="button"
+                                class="player-select player-artist-btn @(!string.IsNullOrEmpty(_playerArtist) ? "has-selection" : "")"
+                                @onclick="OpenArtistPicker"
+                                title="Список артистов с быстрым поиском">
+                            <span class="pab-left">
+                                <span class="pab-icon">👤</span>
+                                <span class="pab-text">
+                                    @if (string.IsNullOrWhiteSpace(_playerArtist))
+                                    {
+                                        <span>Все артисты (@FormatInt(_cachedArtists.Count > 0 ? _cachedArtists.Count : GetAvailableArtistsCount()))</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="pab-name">@_playerArtist</span>
+                                        <span class="pab-count">(@FormatInt(GetArtistTrackCount(_playerArtist)) тр.)</span>
+                                    }
+                                </span>
+                            </span>
+                            <span class="pab-right">
+                                <span class="pab-search-glyph">🔍</span>
+                                <span class="pab-arrow">▾</span>
+                            </span>
                         </button>
-                        <button class="sort-tab @(Store.Preferences.PlayerSortKey == "album" ? "active" : "")"
-                                @onclick='() => ToggleSort("album")'
-                                title="Сортировать по альбомам">
-                            💿 Альбом@(GetSortArrow("album"))
-                        </button>
-                        <button class="sort-tab hide-xs @(Store.Preferences.PlayerSortKey == "title" ? "active" : "")"
-                                @onclick='() => ToggleSort("title")'
-                                title="Сортировать по названиям треков">
-                            🎵 Трек@(GetSortArrow("title"))
-                        </button>
-                        @if (Store.Preferences.PlayerSortKey != "default")
+                        @if (!string.IsNullOrWhiteSpace(_playerArtist))
                         {
-                            <button class="sort-tab btn-reset-sort"
-                                    @onclick="ResetSort"
-                                    title="Сбросить сортировку (по каталогу)">
+                            <button type="button"
+                                    class="player-artist-clear-btn"
+                                    @onclick="ClearPlayerArtist"
+                                    title="Сбросить артиста">
                                 ✕
                             </button>
                         }
                     </div>
+
+                    @if (_libraryView == "tracks")
+                    {
+                        <div class="sort-tabs player-sort-tabs" title="Сортировка фонотеки">
+                            <button class="sort-tab @(Store.Preferences.PlayerSortKey == "artist" ? "active" : "")"
+                                    @onclick='() => ToggleSort("artist")'
+                                    title="Сортировать по авторам (артистам)">
+                                👤 Автор@(GetSortArrow("artist"))
+                            </button>
+                            <button class="sort-tab @(Store.Preferences.PlayerSortKey == "album" ? "active" : "")"
+                                    @onclick='() => ToggleSort("album")'
+                                    title="Сортировать по альбомам">
+                                💿 Альбом@(GetSortArrow("album"))
+                            </button>
+                            <button class="sort-tab hide-xs @(Store.Preferences.PlayerSortKey == "title" ? "active" : "")"
+                                    @onclick='() => ToggleSort("title")'
+                                    title="Сортировать по названиям треков">
+                                🎵 Трек@(GetSortArrow("title"))
+                            </button>
+                            @if (Store.Preferences.PlayerSortKey != "default")
+                            {
+                                <button class="sort-tab btn-reset-sort"
+                                        @onclick="ResetSort"
+                                        title="Сбросить сортировку (по каталогу)">
+                                    ✕
+                                </button>
+                            }
+                        </div>
+                    }
                 </div>
             </div>
 
-            <div class="player-tracks-list">
-                @foreach (var t in _filteredTracks.Take(_playerShown))
-                {
-                    bool isCur = pt is not null && pt.Id == t.Id;
-                    <div class="player-track-row @(isCur ? "active" : "")"
-                         @key="t.Id"
-                         @onclick="() => PlayFromListAsync(t)">
-                        <div class="ptr-idx">
-                            @if (isCur)
-                            {
-                                <span class="ptr-eq @(Store.Preferences.PowerOn ? "playing" : "paused")">
-                                    <span></span><span></span><span></span>
-                                </span>
-                            }
-                            else
-                            {
-                                <span class="ptr-play-hint">▶</span>
-                            }
+            @if (_libraryView == "artists")
+            {
+                <div class="player-artist-catalog" role="list">
+                    @{
+                        var artistList = GetFilteredArtists().ToList();
+                    }
+                    @if (artistList.Count > 0)
+                    {
+                        @foreach (var a in artistList)
+                        {
+                            var isSel = string.Equals(_playerArtist, a.Name, StringComparison.OrdinalIgnoreCase);
+                            <div class="player-artist-card @(isSel ? "active" : "")"
+                                 role="button"
+                                 tabindex="0"
+                                 @onclick="() => SelectArtist(a.Name)">
+                                <div class="pac-avatar">👤</div>
+                                <div class="pac-info">
+                                    <div class="pac-name">@a.Name</div>
+                                    <div class="pac-sub">@FormatInt(a.TrackCount) треков в ротации</div>
+                                </div>
+                                <div class="pac-action">
+                                    <span>Показать треки ›</span>
+                                </div>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="deck-placeholder">
+                            Исполнители не найдены по вашему запросу
                         </div>
-
-                        <div class="ptr-info">
-                            <div class="ptr-title" title="@t.DisplayTitle">@t.DisplayTitle</div>
-                            <div class="ptr-sub" title="@t.Artist · @t.Album">
-                                <span class="ptr-artist @(Store.Preferences.PlayerSortKey == "artist" ? "sort-highlight" : "")">@t.Artist</span>
-                                @if (!string.IsNullOrWhiteSpace(t.Album))
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="player-tracks-list">
+                    @foreach (var t in _filteredTracks.Take(_playerShown))
+                    {
+                        bool isCur = pt is not null && pt.Id == t.Id;
+                        <div class="player-track-row @(isCur ? "active" : "")"
+                             @key="t.Id"
+                             @onclick="() => PlayFromListAsync(t)">
+                            <div class="ptr-idx">
+                                @if (isCur)
                                 {
-                                    <span class="ptr-sep">·</span>
-                                    <span class="ptr-album @(Store.Preferences.PlayerSortKey == "album" ? "sort-highlight" : "")">@t.Album</span>
+                                    <span class="ptr-eq @(Store.Preferences.PowerOn ? "playing" : "paused")">
+                                        <span></span><span></span><span></span>
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="ptr-play-hint">▶</span>
                                 }
                             </div>
-                        </div>
 
-                        <div class="ptr-meta-right">
-                            @if (!string.IsNullOrWhiteSpace(t.Genre))
-                            {
-                                <span class="ptr-genre hide-xs">@t.Genre</span>
-                            }
-                            <span class="ptr-codec hide-xs">@t.CodecBadge</span>
-                            <span class="ptr-time">@FormatTime(t.EffectiveDurationSec)</span>
-                        </div>
-                    </div>
-                }
+                            <div class="ptr-info">
+                                <div class="ptr-title" title="@t.DisplayTitle">@t.DisplayTitle</div>
+                                <div class="ptr-sub" title="@t.Artist · @t.Album">
+                                    <span class="ptr-artist @(Store.Preferences.PlayerSortKey == "artist" ? "sort-highlight" : "")"
+                                          @onclick="() => FilterByArtistFromTrack(t.Artist)"
+                                          @onclick:stopPropagation="true"
+                                          title="Показать все треки этого исполнителя">@t.Artist</span>
+                                    @if (!string.IsNullOrWhiteSpace(t.Album))
+                                    {
+                                        <span class="ptr-sep">·</span>
+                                        <span class="ptr-album @(Store.Preferences.PlayerSortKey == "album" ? "sort-highlight" : "")">@t.Album</span>
+                                    }
+                                </div>
+                            </div>
 
-                @if (_filteredTracks.Count > _playerShown)
-                {
-                    <button class="btn-ctrl player-more" @onclick="ShowMorePlayerTracks">
-                        Показать ещё (@FormatInt(_filteredTracks.Count - _playerShown))
-                    </button>
-                }
-                else if (_filteredTracks.Count == 0)
-                {
-                    <div class="deck-placeholder">
-                        @(Engine.IsLoaded ? "Ничего не найдено по вашему запросу" : "Каталог не загружен")
-                    </div>
-                }
-            </div>
+                            <div class="ptr-meta-right">
+                                @if (!string.IsNullOrWhiteSpace(t.Genre))
+                                {
+                                    <span class="ptr-genre hide-xs">@t.Genre</span>
+                                }
+                                <span class="ptr-codec hide-xs">@t.CodecBadge</span>
+                                <span class="ptr-time">@FormatTime(t.EffectiveDurationSec)</span>
+                            </div>
+                        </div>
+                    }
+
+                    @if (_filteredTracks.Count > _playerShown)
+                    {
+                        <button class="btn-ctrl player-more" @onclick="ShowMorePlayerTracks">
+                            Показать ещё (@FormatInt(_filteredTracks.Count - _playerShown))
+                        </button>
+                    }
+                    else if (_filteredTracks.Count == 0)
+                    {
+                        <div class="deck-placeholder">
+                            @(Engine.IsLoaded ? "Ничего не найдено по вашему запросу" : "Каталог не загружен")
+                        </div>
+                    }
+                </div>
+            }
         </section>
 
         <!-- 2. СЕЙЧАС ИГРАЕТ (КОМПАКТНЫЙ ПЛЕЕР СНИЗУ) -->
@@ -699,6 +802,73 @@ else
             </div>
         </footer>
     </main>
+
+    <!-- SEARCHABLE ARTIST PICKER MODAL -->
+    @if (_artistPickerOpen)
+    {
+        <div class="artist-picker-backdrop" @onclick="CloseArtistPicker">
+            <div class="artist-picker-sheet" @onclick:stopPropagation="true">
+                <header class="artist-picker-header">
+                    <div class="artist-picker-title">
+                        <span class="api-header-icon">👤</span>
+                        <span class="api-header-title-text">Исполнители</span>
+                        <span class="player-count-badge">@FormatInt(_cachedArtists.Count > 0 ? _cachedArtists.Count : GetAvailableArtistsCount())</span>
+                    </div>
+                    <button type="button" class="artist-picker-close-btn" @onclick="CloseArtistPicker" title="Закрыть">✕</button>
+                </header>
+
+                <div class="artist-picker-search-bar">
+                    <span class="search-icon">🔍</span>
+                    <input type="search"
+                           class="server-input artist-search-field"
+                           placeholder="Быстрый поиск артиста..."
+                           value="@_artistSearchFilter"
+                           @oninput="OnArtistSearchInput"
+                           autofocus />
+                    @if (!string.IsNullOrWhiteSpace(_artistSearchFilter))
+                    {
+                        <button type="button" class="search-clear-btn" @onclick="ClearArtistSearch" title="Очистить">✕</button>
+                    }
+                </div>
+
+                <div class="artist-picker-list">
+                    <button type="button"
+                            class="artist-picker-item @(string.IsNullOrEmpty(_playerArtist) ? "is-selected" : "")"
+                            @onclick="() => SelectArtist(null)">
+                        <span class="api-item-main">
+                            <span class="api-item-bullet">✦</span>
+                            <span class="api-item-name">Все исполнители</span>
+                        </span>
+                        <span class="api-item-badge">@FormatInt(GetTotalTracksInScope()) тр.</span>
+                    </button>
+
+                    @{
+                        var list = GetFilteredArtists().ToList();
+                    }
+                    @foreach (var a in list)
+                    {
+                        var isSelected = string.Equals(_playerArtist, a.Name, StringComparison.OrdinalIgnoreCase);
+                        <button type="button"
+                                class="artist-picker-item @(isSelected ? "is-selected" : "")"
+                                @onclick="() => SelectArtist(a.Name)">
+                            <span class="api-item-main">
+                                <span class="api-item-bullet">👤</span>
+                                <span class="api-item-name">@a.Name</span>
+                            </span>
+                            <span class="api-item-badge">@FormatInt(a.TrackCount) тр.</span>
+                        </button>
+                    }
+
+                    @if (list.Count == 0)
+                    {
+                        <div class="artist-picker-empty">
+                            <span>Ничего не найдено по запросу «@_artistSearchFilter»</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
 }
 </div>
 
@@ -837,7 +1007,154 @@ else
         {
             _playerStation = value ?? "";
             _playerShown = PlayerPageSize;
+            RebuildAvailableArtists();
+            if (!string.IsNullOrEmpty(_playerArtist) && !_cachedArtists.Any(a => string.Equals(a.Name, _playerArtist, StringComparison.OrdinalIgnoreCase)))
+            {
+                _playerArtist = "";
+            }
             RebuildPlayerList();
+        }
+    }
+
+    public sealed record PlayerArtistItem(string Name, int TrackCount);
+
+    private string _playerArtist = "";
+    private bool _artistPickerOpen;
+    private string _artistSearchFilter = "";
+    private string _libraryView = "tracks"; // "tracks" or "artists"
+    private List<PlayerArtistItem> _cachedArtists = new();
+
+    private void RebuildAvailableArtists()
+    {
+        if (!Engine.IsLoaded)
+        {
+            _cachedArtists = new();
+            return;
+        }
+
+        IEnumerable<RadioTrack> q = Engine.LibraryTracks;
+        if (!string.IsNullOrEmpty(_playerStation))
+        {
+            q = q.Where(t => string.Equals(t.Station, _playerStation, StringComparison.OrdinalIgnoreCase));
+        }
+
+        _cachedArtists = q
+            .Select(t => string.IsNullOrWhiteSpace(t.Artist) ? "Неизвестный исполнитель" : t.Artist.Trim())
+            .GroupBy(a => a, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new PlayerArtistItem(g.Key, g.Count()))
+            .OrderBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+    }
+
+    private int GetAvailableArtistsCount()
+    {
+        if (_cachedArtists.Count == 0 && Engine.IsLoaded)
+            RebuildAvailableArtists();
+        return _cachedArtists.Count;
+    }
+
+    private int GetTotalTracksInScope()
+    {
+        if (!Engine.IsLoaded) return 0;
+        if (string.IsNullOrEmpty(_playerStation)) return Engine.LibraryTracks.Count;
+        return Engine.LibraryTracks.Count(t => string.Equals(t.Station, _playerStation, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private IEnumerable<PlayerArtistItem> GetFilteredArtists()
+    {
+        if (_cachedArtists.Count == 0 && Engine.IsLoaded)
+            RebuildAvailableArtists();
+
+        if (string.IsNullOrWhiteSpace(_artistSearchFilter))
+            return _cachedArtists;
+
+        return _cachedArtists.Where(a =>
+            a.Name.Contains(_artistSearchFilter.Trim(), StringComparison.CurrentCultureIgnoreCase));
+    }
+
+    private int GetArtistTrackCount(string artist)
+    {
+        if (_cachedArtists.Count == 0 && Engine.IsLoaded)
+            RebuildAvailableArtists();
+
+        var item = _cachedArtists.FirstOrDefault(a => string.Equals(a.Name, artist, StringComparison.OrdinalIgnoreCase));
+        return item?.TrackCount ?? 0;
+    }
+
+    private void OpenArtistPicker()
+    {
+        _artistSearchFilter = "";
+        _artistPickerOpen = true;
+    }
+
+    private void CloseArtistPicker()
+    {
+        _artistPickerOpen = false;
+        _artistSearchFilter = "";
+    }
+
+    private void SelectArtist(string? artist)
+    {
+        _playerArtist = artist?.Trim() ?? "";
+        _artistPickerOpen = false;
+        _artistSearchFilter = "";
+        _playerShown = PlayerPageSize;
+        _libraryView = "tracks";
+        RebuildPlayerList();
+    }
+
+    private void ClearPlayerArtist()
+    {
+        _playerArtist = "";
+        _playerShown = PlayerPageSize;
+        RebuildPlayerList();
+    }
+
+    private void FilterByArtistFromTrack(string? artist)
+    {
+        if (!string.IsNullOrWhiteSpace(artist))
+        {
+            SelectArtist(artist);
+        }
+    }
+
+    private void OnArtistSearchInput(ChangeEventArgs e)
+    {
+        _artistSearchFilter = e.Value?.ToString() ?? "";
+    }
+
+    private void ClearArtistSearch()
+    {
+        _artistSearchFilter = "";
+    }
+
+    private void SetLibraryView(string view)
+    {
+        _libraryView = view;
+    }
+
+    private void OnUniversalSearchInput(ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString() ?? "";
+        if (_libraryView == "artists")
+        {
+            _artistSearchFilter = val;
+        }
+        else
+        {
+            PlayerSearch = val;
+        }
+    }
+
+    private void ClearUniversalSearch()
+    {
+        if (_libraryView == "artists")
+        {
+            _artistSearchFilter = "";
+        }
+        else
+        {
+            ClearPlayerSearch();
         }
     }
 
@@ -1615,6 +1932,7 @@ else
 
     private void OnCatalogChangedForPlayer()
     {
+        RebuildAvailableArtists();
         RebuildPlayerList();
         if (IsPlayerMode)
             RestorePlayerTrack();
@@ -1631,6 +1949,9 @@ else
         IEnumerable<RadioTrack> q = Engine.LibraryTracks;
         if (!string.IsNullOrEmpty(_playerStation))
             q = q.Where(t => string.Equals(t.Station, _playerStation, StringComparison.OrdinalIgnoreCase));
+
+        if (!string.IsNullOrEmpty(_playerArtist))
+            q = q.Where(t => string.Equals(t.Artist, _playerArtist, StringComparison.OrdinalIgnoreCase));
 
         var words = _playerSearch.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (words.Length > 0)
