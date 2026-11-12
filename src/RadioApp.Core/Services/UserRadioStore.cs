@@ -23,8 +23,14 @@ public sealed class UserRadioPreferences
     [JsonPropertyName("sort_mode")]
     public string SortMode { get; set; } = "count";
 
+    private HashSet<int> _likedTrackIds = new();
+
     [JsonPropertyName("liked_track_ids")]
-    public HashSet<int> LikedTrackIds { get; set; } = new();
+    public HashSet<int> LikedTrackIds
+    {
+        get => _likedTrackIds ??= new();
+        set => _likedTrackIds = value ?? new();
+    }
 
     [JsonPropertyName("banned_track_ids")]
     public HashSet<int> BannedTrackIds { get; set; } = new();

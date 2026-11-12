@@ -474,8 +474,14 @@ else
                         <button type="button"
                                 class="player-view-tab @(_libraryView == "tracks" ? "active" : "")"
                                 @onclick='() => SetLibraryView("tracks")'
-                                title="Список треков">
+                                title="Список всех треков">
                             🎵 Треки
+                        </button>
+                        <button type="button"
+                                class="player-view-tab player-view-tab-fav @(_libraryView == "favorites" ? "active" : "")"
+                                @onclick='() => SetLibraryView("favorites")'
+                                title="Только избранные треки">
+                            ❤️ Любимые
                         </button>
                         <button type="button"
                                 class="player-view-tab @(_libraryView == "artists" ? "active" : "")"
@@ -486,7 +492,7 @@ else
                     </div>
 
                     <span class="player-count-badge">
-                        @(_libraryView == "tracks" ? $"{FormatInt(_filteredTracks.Count)} тр." : $"{FormatInt(_cachedArtists.Count > 0 ? _cachedArtists.Count : GetAvailableArtistsCount())} арт.")
+                        @(_libraryView == "artists" ? $"{FormatInt(_cachedArtists.Count > 0 ? _cachedArtists.Count : GetAvailableArtistsCount())} арт." : $"{FormatInt(_filteredTracks.Count)} тр.")
                     </span>
                 </div>
 
@@ -504,10 +510,10 @@ else
                 <div class="search-input-wrap">
                     <input class="server-input player-search-input"
                            type="text"
-                           placeholder="@(_libraryView == "tracks" ? "🔎 Поиск: артист, трек, альбом" : "🔎 Поиск артиста...")"
-                           value="@(_libraryView == "tracks" ? PlayerSearch : _artistSearchFilter)"
+                           placeholder="@(_libraryView == "artists" ? "🔎 Поиск артиста..." : "🔎 Поиск: артист, трек, альбом")"
+                           value="@(_libraryView == "artists" ? _artistSearchFilter : PlayerSearch)"
                            @oninput="OnUniversalSearchInput" />
-                    @if (!string.IsNullOrEmpty(_libraryView == "tracks" ? _playerSearch : _artistSearchFilter))
+                    @if (!string.IsNullOrEmpty(_libraryView == "artists" ? _artistSearchFilter : _playerSearch))
                     {
                         <button class="search-clear-btn" @onclick="ClearUniversalSearch" title="Очистить поиск">✕</button>
                     }
@@ -557,7 +563,7 @@ else
                         }
                     </div>
 
-                    @if (_libraryView == "tracks")
+                    @if (_libraryView == "tracks" || _libraryView == "favorites")
                     {
                         <div class="sort-tabs player-sort-tabs" title="Сортировка фонотеки">
                             <button class="sort-tab @(Store.Preferences.PlayerSortKey == "artist" ? "active" : "")"
@@ -600,9 +606,9 @@ else
                         {
                             var isSel = string.Equals(_playerArtist, a.Name, StringComparison.OrdinalIgnoreCase);
                             <div class="player-artist-card @(isSel ? "active" : "")"
-                                 role="button"
-                                 tabindex="0"
-                                 @onclick="() => SelectArtist(a.Name)">
+                                  role="button"
+                                  tabindex="0"
+                                  @onclick="() => SelectArtist(a.Name)">
                                 <div class="pac-avatar">👤</div>
                                 <div class="pac-info">
                                     <div class="pac-name">@a.Name</div>
@@ -673,6 +679,13 @@ else
                                 }
                                 <span class="ptr-codec hide-xs">@t.CodecBadge</span>
                                 <span class="ptr-time">@FormatTime(t.EffectiveDurationSec)</span>
+                                <button type="button"
+                                        class="ptr-like-btn @(Store.Preferences.LikedTrackIds.Contains(t.Id) ? "is-liked" : "")"
+                                        @onclick="() => ToggleLike(t.Id)"
+                                        @onclick:stopPropagation="true"
+                                        title="@(Store.Preferences.LikedTrackIds.Contains(t.Id) ? "Удалить из избранного" : "Добавить в избранное")">
+                                    @(Store.Preferences.LikedTrackIds.Contains(t.Id) ? "❤️" : "🤍")
+                                </button>
                             </div>
                         </div>
                     }
@@ -686,7 +699,14 @@ else
                     else if (_filteredTracks.Count == 0)
                     {
                         <div class="deck-placeholder">
-                            @(Engine.IsLoaded ? "Ничего не найдено по вашему запросу" : "Каталог не загружен")
+                            @if (_libraryView == "favorites")
+                            {
+                                <span>❤️ В избранном пока пусто.<br/><small style="font-size: 11px; opacity: 0.7;">Нажмите ❤️ на любом треке, чтобы добавить его сюда.</small></span>
+                            }
+                            else
+                            {
+                                <span>@(Engine.IsLoaded ? "Ничего не найдено по вашему запросу" : "Каталог не загружен")</span>
+                            }
                         </div>
                     }
                 </div>
@@ -694,8 +714,8 @@ else
         </section>
 
         <!-- 2. СЕЙЧАС ИГРАЕТ (КОМПАКТНЫЙ ПЛЕЕР СНИЗУ) -->
-        <footer class="player-bottom-dock">
-            <div class="dock-scrub-row">
+        <footer class="player-bottom-dock" @onclick="OpenNowPlaying" title="Нажмите, чтобы развернуть экран трека">
+            <div class="dock-scrub-row" @onclick:stopPropagation="true">
                 <span class="dock-time dock-time-current">@FormatTime(shownPos)</span>
                 <input type="range"
                        class="vol-slider dock-slider @(Store.Preferences.PowerOn ? "playing" : "paused")"
@@ -749,8 +769,8 @@ else
                     </div>
                 </div>
 
-                <div class="dock-controls">
-                    <button class="btn-dock-btn hide-xs @(Store.Preferences.PlayerShuffle ? "liked" : "")"
+                <div class="dock-controls" @onclick:stopPropagation="true">
+                    <button class="btn-dock-btn @(Store.Preferences.PlayerShuffle ? "liked" : "")"
                             @onclick="TogglePlayerShuffle"
                             title="Случайный порядок (Shuffle)">
                         🔀
@@ -770,7 +790,7 @@ else
                             title="Следующий трек [→]">
                         ⏭
                     </button>
-                    <button class="btn-dock-btn hide-xs @(Store.Preferences.PlayerRepeat != "off" ? "liked" : "")"
+                    <button class="btn-dock-btn @(Store.Preferences.PlayerRepeat != "off" ? "liked" : "")"
                             @onclick="CyclePlayerRepeat"
                             title="@(Store.Preferences.PlayerRepeat switch { "one" => "Повтор одного трека", "all" => "Повтор всей очереди", _ => "Повтор выключен" })">
                         @(Store.Preferences.PlayerRepeat switch { "one" => "🔂", _ => "🔁" })
@@ -779,7 +799,7 @@ else
 
                 @if (!IsAndroid)
                 {
-                    <div class="dock-actions">
+                    <div class="dock-actions" @onclick:stopPropagation="true">
                         <div class="dock-vol hide-mobile">
                             <span>🔊</span>
                             <input type="range"
@@ -794,6 +814,177 @@ else
             </div>
         </footer>
     </main>
+
+    <!-- NOW PLAYING EXPANDED SHEET -->
+    @if (_nowPlayingOpen)
+    {
+        var ptNow = _playerTrack;
+        bool showNowCover = ptNow is not null && !_coverFailedTrackIds.Contains(ptNow.Id);
+        double npPos = _isSeeking ? _seekPreview : _playerPos;
+        int npSeekMax = (int)Math.Max(1, Math.Ceiling(_playerDur));
+        double npProgressPct = Math.Clamp(npSeekMax > 0 ? (npPos / (double)npSeekMax * 100.0) : 0.0, 0.0, 100.0);
+        string npProgressStyle = $"--progress: {npProgressPct.ToString("0.0", CultureInfo.InvariantCulture)}%;";
+        bool npIsLiked = ptNow is not null && Store.Preferences.LikedTrackIds.Contains(ptNow.Id);
+
+        <div class="now-playing-backdrop" @onclick="CloseNowPlaying">
+            <div class="now-playing-sheet" @onclick:stopPropagation="true">
+                <!-- PULL HANDLE -->
+                <div class="np-drag-bar" @onclick="CloseNowPlaying">
+                    <div class="np-drag-handle"></div>
+                </div>
+
+                <!-- HEADER -->
+                <header class="np-header">
+                    <button type="button" class="np-collapse-btn" @onclick="CloseNowPlaying" title="Свернуть">
+                        <span>▾</span>
+                    </button>
+
+                    <div class="np-header-meta">
+                        <span class="np-header-tag">СЕЙЧАС ИГРАЕТ</span>
+                        @if (ptNow is not null && !string.IsNullOrWhiteSpace(ptNow.Station))
+                        {
+                            <span class="np-header-station">@ptNow.Station</span>
+                        }
+                    </div>
+
+                    @if (ptNow is not null)
+                    {
+                        <button type="button"
+                                class="np-heart-btn @(npIsLiked ? "is-liked" : "")"
+                                @onclick="() => ToggleLike(ptNow.Id)"
+                                title="@(npIsLiked ? "Удалить из избранного" : "Добавить в избранное")">
+                            @(npIsLiked ? "❤️" : "🤍")
+                        </button>
+                    }
+                    else
+                    {
+                        <div style="width: 36px;"></div>
+                    }
+                </header>
+
+                <!-- VINYL SECTION -->
+                <div class="np-vinyl-area">
+                    <div class="np-vinyl-disc @(Store.Preferences.PowerOn ? "spinning" : "paused")">
+                        <div class="np-vinyl-grooves"></div>
+
+                        <div class="np-vinyl-label">
+                            @if (showNowCover && ptNow is not null)
+                            {
+                                <img class="np-vinyl-img"
+                                     src="@Engine.GetCoverUrl(ptNow)"
+                                     decoding="async"
+                                     alt=""
+                                     @onerror="() => OnCoverLoadError(ptNow.Id)" />
+                            }
+                            else
+                            {
+                                <div class="np-vinyl-fallback">🎵</div>
+                            }
+                            <div class="np-vinyl-spindle"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- METADATA -->
+                <div class="np-meta-section">
+                    @if (ptNow is not null)
+                    {
+                        <div class="np-title" title="@ptNow.DisplayTitle">@ptNow.DisplayTitle</div>
+                        <div class="np-artist-wrap">
+                            <button type="button"
+                                    class="np-artist-btn"
+                                    @onclick="() => { FilterByArtistFromTrack(ptNow.Artist); CloseNowPlaying(); }"
+                                    title="Показать все треки этого исполнителя">
+                                @ptNow.Artist
+                            </button>
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(ptNow.Album))
+                        {
+                            <div class="np-album" title="@ptNow.Album">💿 @ptNow.Album</div>
+                        }
+
+                        <div class="np-badges-row">
+                            @if (!string.IsNullOrWhiteSpace(ptNow.CodecBadge))
+                            {
+                                <span class="np-badge np-badge-codec">@ptNow.CodecBadge</span>
+                            }
+                            @if (ptNow.CodecBadge.Contains("LOSSLESS", StringComparison.OrdinalIgnoreCase) ||
+                                 ptNow.CodecBadge.Contains("FLAC", StringComparison.OrdinalIgnoreCase) ||
+                                 ptNow.IsAlac)
+                            {
+                                <span class="np-badge np-badge-lossless">LOSSLESS</span>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(ptNow.Genre))
+                            {
+                                <span class="np-badge np-badge-genre">@ptNow.Genre</span>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="np-title">Ничего не воспроизводится</div>
+                        <div class="np-sub">Выберите трек из фонотеки</div>
+                    }
+                </div>
+
+                <!-- TIMELINE SCRUBBER -->
+                <div class="np-timeline-section">
+                    <input type="range"
+                           class="vol-slider np-slider @(Store.Preferences.PowerOn ? "playing" : "paused")"
+                           min="0"
+                           max="@npSeekMax"
+                           step="1"
+                           value="@((int)npPos)"
+                           style="@npProgressStyle"
+                           @oninput="OnSeekInput"
+                           @onchange="OnSeekCommitAsync" />
+                    <div class="np-time-row">
+                        <span class="np-time-curr">@FormatTime(npPos)</span>
+                        <span class="np-time-total">@FormatTime(_playerDur)</span>
+                    </div>
+                </div>
+
+                <!-- MAIN PLAYBACK CONTROLS -->
+                <div class="np-controls-section">
+                    <button type="button"
+                            class="np-ctrl-btn @(Store.Preferences.PlayerShuffle ? "active" : "")"
+                            @onclick="TogglePlayerShuffle"
+                            title="Случайный порядок (Shuffle)">
+                        🔀
+                    </button>
+
+                    <button type="button"
+                            class="np-ctrl-btn np-step-btn"
+                            @onclick="() => PlayerStepAsync(-1)"
+                            title="Предыдущий трек">
+                        ⏮
+                    </button>
+
+                    <button type="button"
+                            class="np-play-btn @(Store.Preferences.PowerOn ? "playing" : "paused")"
+                            @onclick="TogglePowerAsync"
+                            title="Воспроизведение / Пауза">
+                        @(Store.Preferences.PowerOn ? "⏸" : "▶")
+                    </button>
+
+                    <button type="button"
+                            class="np-ctrl-btn np-step-btn"
+                            @onclick="() => PlayerStepAsync(1)"
+                            title="Следующий трек">
+                        ⏭
+                    </button>
+
+                    <button type="button"
+                            class="np-ctrl-btn @(Store.Preferences.PlayerRepeat != "off" ? "active" : "")"
+                            @onclick="CyclePlayerRepeat"
+                            title="@(Store.Preferences.PlayerRepeat switch { "one" => "Повтор одного трека", "all" => "Повтор всей очереди", _ => "Повтор выключен" })">
+                        @(Store.Preferences.PlayerRepeat switch { "one" => "🔂", _ => "🔁" })
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
 
     <!-- SEARCHABLE ARTIST PICKER MODAL -->
     @if (_artistPickerOpen)
@@ -1039,8 +1230,37 @@ else
     private string _playerArtist = "";
     private bool _artistPickerOpen;
     private string _artistSearchFilter = "";
-    private string _libraryView = "tracks"; // "tracks" or "artists"
+    private string _libraryView = "tracks"; // "tracks", "favorites", or "artists"
+    private bool _nowPlayingOpen;
     private List<PlayerArtistItem> _cachedArtists = new();
+
+    private void OpenNowPlaying()
+    {
+        _nowPlayingOpen = true;
+    }
+
+    private void CloseNowPlaying()
+    {
+        _nowPlayingOpen = false;
+    }
+
+    private void ToggleLike(int trackId)
+    {
+        if (Store.Preferences.LikedTrackIds.Contains(trackId))
+        {
+            Store.Preferences.LikedTrackIds.Remove(trackId);
+        }
+        else
+        {
+            Store.Preferences.LikedTrackIds.Add(trackId);
+        }
+        Store.Save();
+        if (_libraryView == "favorites")
+        {
+            RebuildPlayerList();
+        }
+        StateHasChanged();
+    }
 
     private void RebuildAvailableArtists()
     {
@@ -1164,6 +1384,11 @@ else
     private void SetLibraryView(string view)
     {
         _libraryView = view;
+        if (_libraryView == "tracks" || _libraryView == "favorites")
+        {
+            _playerShown = PlayerPageSize;
+            RebuildPlayerList();
+        }
     }
 
     private void OnUniversalSearchInput(ChangeEventArgs e)
@@ -2005,6 +2230,9 @@ else
 
         if (!string.IsNullOrEmpty(_playerArtist))
             q = q.Where(t => string.Equals(t.Artist, _playerArtist, StringComparison.OrdinalIgnoreCase));
+
+        if (_libraryView == "favorites")
+            q = q.Where(t => Store.Preferences.LikedTrackIds.Contains(t.Id));
 
         var words = _playerSearch.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (words.Length > 0)
