@@ -75,12 +75,7 @@ public sealed class RadioBroadcastEngine
         if (!_store.TryReadCatalogCache(out var utf8Json, out var cachedServerUrl, out _))
             return false;
 
-        if (!string.IsNullOrWhiteSpace(cachedServerUrl) &&
-            !string.Equals(cachedServerUrl, configured, StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
+        // In offline mode or cold start, load cached catalog immediately so library is ready
         try
         {
             var catalog = JsonSerializer.Deserialize<RadioCatalog>(utf8Json, JsonOpts);

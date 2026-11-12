@@ -594,6 +594,25 @@ else
                 </div>
             </div>
 
+            @if (_libraryView == "tracks" || _libraryView == "favorites")
+            {
+                <div class="player-genre-bar" role="group" aria-label="Жанры">
+                    <button type="button"
+                            class="player-genre-chip @(string.IsNullOrEmpty(_playerGenreFilter) ? "active" : "")"
+                            @onclick='() => SelectGenreFilter("")'>
+                        Все
+                    </button>
+                    @foreach (var g in CommonGenres)
+                    {
+                        <button type="button"
+                                class="player-genre-chip @(string.Equals(_playerGenreFilter, g, StringComparison.OrdinalIgnoreCase) ? "active" : "")"
+                                @onclick="() => SelectGenreFilter(g)">
+                            @g
+                        </button>
+                    }
+                </div>
+            }
+
             @if (_libraryView == "artists")
             {
                 <div class="player-artist-catalog" role="list">
@@ -1232,7 +1251,53 @@ else
     private string _artistSearchFilter = "";
     private string _libraryView = "tracks"; // "tracks", "favorites", or "artists"
     private bool _nowPlayingOpen;
+    private string _playerGenreFilter = "";
+    private static readonly string[] CommonGenres = { "Rock", "Hip-Hop", "Electronic", "Pop", "Phonk", "Synthwave", "Indie", "Metal" };
     private List<PlayerArtistItem> _cachedArtists = new();
+
+    private void SelectGenreFilter(string genre)
+    {
+        if (string.Equals(_playerGenreFilter, genre, StringComparison.OrdinalIgnoreCase))
+            _playerGenreFilter = "";
+        else
+            _playerGenreFilter = genre;
+
+        _playerShown = PlayerPageSize;
+        RebuildPlayerList();
+        RebuildQueueForCurrentFilter(_playerTrack);
+    }
+
+    private RadioTrack? GetNextPlayerTrack()
+    {
+        if (_playerQueue.Count == 0) return null;
+        if (Store.Preferences.PlayerRepeat == "one" && _playerTrack is not null)
+            return _playerTrack;
+
+        int n = _playerQueue.Count;
+        if (_playerIndex >= 0 && _playerIndex + 1 >= n && Store.Preferences.PlayerRepeat == "off")
+            return null;
+
+        int next = (_playerIndex >= 0 && _playerIndex < n) ? ((_playerIndex + 1) % n) : 0;
+        return _playerQueue[next];
+    }
+
+    private async Task CheckPreloadNextPlayerTrackAsync()
+    {
+        if (!_jsInitialized || !Store.Preferences.PowerOn || _playerTrack is null || _playerQueue.Count == 0)
+            return;
+
+        var next = GetNextPlayerTrack();
+        if (next is null || next.Id == _playerTrack.Id || next.Id == _lastPreloadedTrackId)
+            return;
+
+        _lastPreloadedTrackId = next.Id;
+        var preloadUrl = Engine.GetStreamUrl(next, startOffsetSec: 0, preferOpus: IsAndroid);
+        await JS.InvokeVoidAsync("radioAudio.preloadNext", new
+        {
+            trackId = next.Id,
+            streamUrl = preloadUrl
+        });
+    }
 
     private void OpenNowPlaying()
     {
@@ -2133,7 +2198,14 @@ else
     [JSInvokable]
     public async Task OnStepFrequencyAsync(int direction)
     {
-        await StepFrequencyAsync(direction);
+        if (IsPlayerMode)
+        {
+            await PlayerStepAsync(direction);
+        }
+        else
+        {
+            await StepFrequencyAsync(direction);
+        }
         StateHasChanged();
     }
 
@@ -2234,14 +2306,11 @@ else
         if (_libraryView == "favorites")
             q = q.Where(t => Store.Preferences.LikedTrackIds.Contains(t.Id));
 
-        var words = _playerSearch.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (words.Length > 0)
-        {
-            q = q.Where(t => words.All(w =>
-                t.Artist.Contains(w, StringComparison.OrdinalIgnoreCase) ||
-                t.Album.Contains(w, StringComparison.OrdinalIgnoreCase) ||
-                t.DisplayTitle.Contains(w, StringComparison.OrdinalIgnoreCase)));
-        }
+        if (!string.IsNullOrEmpty(_playerGenreFilter))
+            q = q.Where(t => t.Genre.Contains(_playerGenreFilter, StringComparison.OrdinalIgnoreCase));
+
+        if (!string.IsNullOrWhiteSpace(_playerSearch))
+            q = q.Where(t => SearchNormalizer.MatchesFuzzy(t, _playerSearch));
 
         _filteredTracks = ApplySorting(q).ToList();
     }
@@ -2391,6 +2460,7 @@ else
         _playerPos = 0;
         _playerDur = t.EffectiveDurationSec;
         _isSeeking = false;
+        _lastPreloadedTrackId = -1;
         Store.Preferences.PlayerTrackId = t.Id;
         Store.Preferences.PowerOn = true;
         Store.Save();
@@ -2601,6 +2671,11 @@ else
             _playerPos = Math.Max(0, p.Pos);
             if (p.Dur > 1)
                 _playerDur = p.Dur;
+
+            if (Store.Preferences.PowerOn && _playerPos >= 1.5)
+            {
+                await CheckPreloadNextPlayerTrackAsync();
+            }
         }
         catch
         {

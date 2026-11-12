@@ -147,3 +147,79 @@ public sealed partial class RadioTrack
     [GeneratedRegex(@"\s*[\(\[](?:skysound\.cc|zaycev\.net|muzofon\.[a-z]+|mp3party\.[a-z]+|promodj\.com)[\)\]]\s*$", RegexOptions.IgnoreCase)]
     private static partial Regex SiteWatermarkRegex();
 }
+
+public static class SearchNormalizer
+{
+    private static readonly Dictionary<char, string> RuToEn = new()
+    {
+        ['а'] = "a", ['б'] = "b", ['в'] = "v", ['г'] = "g", ['д'] = "d",
+        ['е'] = "e", ['ё'] = "e", ['ж'] = "zh", ['з'] = "z", ['и'] = "i",
+        ['й'] = "y", ['к'] = "k", ['л'] = "l", ['м'] = "m", ['н'] = "n",
+        ['о'] = "o", ['п'] = "p", ['р'] = "r", ['с'] = "s", ['т'] = "t",
+        ['у'] = "u", ['ф'] = "f", ['х'] = "h", ['ц'] = "ts", ['ч'] = "ch",
+        ['ш'] = "sh", ['щ'] = "sh", ['ъ'] = "", ['ы'] = "y", ['ь'] = "",
+        ['э'] = "e", ['ю'] = "yu", ['я'] = "ya"
+    };
+
+    public static string Normalize(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input)) return "";
+        var sb = new System.Text.StringBuilder(input.Length);
+        foreach (char c in input)
+        {
+            if (char.IsLetterOrDigit(c))
+                sb.Append(char.ToLowerInvariant(c));
+            else if (char.IsWhiteSpace(c) || c == '-' || c == '/' || c == '_' || c == '.')
+                sb.Append(' ');
+        }
+        return sb.ToString().Trim();
+    }
+
+    public static string TransliterateRuToEn(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input)) return "";
+        var sb = new System.Text.StringBuilder(input.Length);
+        foreach (char c in input.ToLowerInvariant())
+        {
+            if (RuToEn.TryGetValue(c, out var repl))
+                sb.Append(repl);
+            else
+                sb.Append(c);
+        }
+        return sb.ToString();
+    }
+
+    public static bool MatchesFuzzy(RadioTrack track, string query)
+    {
+        if (string.IsNullOrWhiteSpace(query)) return true;
+        var words = query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (words.Length == 0) return true;
+
+        var titleNorm = Normalize(track.DisplayTitle);
+        var artistNorm = Normalize(track.Artist);
+        var albumNorm = Normalize(track.Album);
+
+        var titleTranslit = TransliterateRuToEn(titleNorm);
+        var artistTranslit = TransliterateRuToEn(artistNorm);
+        var albumTranslit = TransliterateRuToEn(albumNorm);
+
+        foreach (var w in words)
+        {
+            var wNorm = Normalize(w);
+            if (string.IsNullOrEmpty(wNorm)) continue;
+            var wTranslit = TransliterateRuToEn(wNorm);
+
+            bool matches =
+                titleNorm.Contains(wNorm, StringComparison.OrdinalIgnoreCase) ||
+                artistNorm.Contains(wNorm, StringComparison.OrdinalIgnoreCase) ||
+                albumNorm.Contains(wNorm, StringComparison.OrdinalIgnoreCase) ||
+                titleTranslit.Contains(wTranslit, StringComparison.OrdinalIgnoreCase) ||
+                artistTranslit.Contains(wTranslit, StringComparison.OrdinalIgnoreCase) ||
+                albumTranslit.Contains(wTranslit, StringComparison.OrdinalIgnoreCase);
+
+            if (!matches) return false;
+        }
+
+        return true;
+    }
+}
