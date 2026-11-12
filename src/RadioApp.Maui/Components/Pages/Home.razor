@@ -160,6 +160,13 @@
                             <div class="popover-err">@Tailscale.LastError</div>
                         }
                     }
+
+                    <div class="popover-divider"></div>
+
+                    <div class="popover-version-row">
+                        <span class="pvr-app">RadioWork FM</span>
+                        <span class="pvr-ver">@AppVersionDisplay</span>
+                    </div>
                 </div>
             }
         </div>
@@ -903,6 +910,24 @@ else
     private const double FreqMin = 87.5;
     private const double FreqMax = 108.0;
     private static readonly bool IsAndroid = OperatingSystem.IsAndroid();
+
+    private static string AppVersionDisplay
+    {
+        get
+        {
+            try
+            {
+                var v = Microsoft.Maui.ApplicationModel.AppInfo.Current.VersionString;
+                var b = Microsoft.Maui.ApplicationModel.AppInfo.Current.BuildString;
+                return string.IsNullOrWhiteSpace(b) || b == v ? $"v{v}" : $"v{v} ({b})";
+            }
+            catch
+            {
+                var asmVer = typeof(Home).Assembly.GetName().Version;
+                return asmVer != null ? $"v{asmVer.Major}.{asmVer.Minor}.{asmVer.Build}" : "v0.3.14";
+            }
+        }
+    }
 
     private DotNetObjectReference<Home>? _dotNetRef;
     private CancellationTokenSource? _tickCts;
