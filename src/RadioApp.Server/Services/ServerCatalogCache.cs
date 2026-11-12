@@ -214,6 +214,7 @@ public sealed class ServerCatalogCache
                 if (rawCatalog is null)
                     return;
 
+                var libraryRoot = !string.IsNullOrWhiteSpace(rawCatalog.Library) ? rawCatalog.Library : MusicRootPath;
                 var byId = new Dictionary<int, ServerTrackEntry>(rawCatalog.Tagged + 64);
                 var slimStations = new Dictionary<string, StationCatalogEntry>(StringComparer.Ordinal);
 
@@ -227,7 +228,7 @@ public sealed class ServerCatalogCache
                     {
                         if (!string.IsNullOrWhiteSpace(tr.Path))
                         {
-                            var fullPath = Path.GetFullPath(tr.Path);
+                            var fullPath = ResolveTrackPath(tr.Path, libraryRoot);
                             byId[tr.Id] = new ServerTrackEntry(
                                 Id: tr.Id,
                                 FullPath: fullPath,
@@ -435,16 +436,49 @@ public sealed class ServerCatalogCache
         };
     }
 
+    private string ResolveTrackPath(string rawPath, string libraryRoot)
+    {
+        if (string.IsNullOrWhiteSpace(rawPath))
+            return "";
+
+        // If running on non-Windows (e.g. Linux Docker container) and path has Windows drive letter:
+        if (!OperatingSystem.IsWindows() && rawPath.Length >= 2 && rawPath[1] == ':')
+        {
+            var normalizedRaw = rawPath.Replace('\\', '/');
+            var normalizedLib = libraryRoot.Replace('\\', '/');
+
+            if (normalizedRaw.StartsWith(normalizedLib, StringComparison.OrdinalIgnoreCase))
+            {
+                var rel = normalizedRaw[normalizedLib.Length..].TrimStart('/');
+                return Path.GetFullPath(Path.Combine(MusicRootPath, rel));
+            }
+
+            var withoutDrive = normalizedRaw[2..].TrimStart('/');
+            if (withoutDrive.StartsWith("Music/", StringComparison.OrdinalIgnoreCase))
+            {
+                var rel = withoutDrive["Music/".Length..];
+                return Path.GetFullPath(Path.Combine(MusicRootPath, rel));
+            }
+
+            return Path.GetFullPath(Path.Combine(MusicRootPath, withoutDrive));
+        }
+
+        return Path.GetFullPath(rawPath);
+    }
+
     private static string ResolveFfmpegPath(string? configured)
     {
         if (!string.IsNullOrWhiteSpace(configured) && File.Exists(configured))
             return configured;
 
-        var wingetLink = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Microsoft", "WinGet", "Links", "ffmpeg.exe");
-        if (File.Exists(wingetLink))
-            return wingetLink;
+        if (OperatingSystem.IsWindows())
+        {
+            var wingetLink = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Microsoft", "WinGet", "Links", "ffmpeg.exe");
+            if (File.Exists(wingetLink))
+                return wingetLink;
+        }
 
         return "ffmpeg";
     }

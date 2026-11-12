@@ -1,0 +1,17 @@
+services:
+  radio-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: radiowork-server:latest
+    container_name: radio-server
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - ASPNETCORE_URLS=http://0.0.0.0:5480
+      - RadioServer__StationsJsonPath=/data/stations.json
+      - RadioServer__MusicRootPath=/music
+      - RadioServer__FfmpegPath=ffmpeg
+    volumes:
+      - /mnt/d/Music:/music:ro
+      - /mnt/d/Repos/RadioWork/stations.json:/data/stations.json:ro
