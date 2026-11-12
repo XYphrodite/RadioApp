@@ -1727,6 +1727,7 @@ input[type="range"].vol-slider::-webkit-slider-thumb {
   display: flex;
   align-items: center;
   min-width: 140px;
+  height: 36px;
 }
 
 .player-search-input {
@@ -2237,7 +2238,9 @@ input[type="range"].dock-slider::-moz-range-thumb {
   .player-head { padding: 8px 10px; }
   .btn-fullscreen-toggle { padding: 4px 8px; font-size: 13px; }
   .player-count-badge { font-size: 10.5px; padding: 2px 6px; }
-  .player-filters { flex-direction: column; gap: 6px; padding: 8px 10px; }
+  .player-filters { flex-direction: column; gap: 6px; padding: 8px 10px; flex: 0 0 auto; }
+  .search-input-wrap { flex: 0 0 auto; width: 100%; min-width: 0; height: 36px; }
+  .player-search-input { width: 100%; height: 36px; }
   .player-filter-actions { width: 100%; flex-direction: column; gap: 6px; flex: 0 0 auto; }
   .player-filter-actions .player-select { width: 100%; max-width: 100%; height: 36px; flex: 0 0 36px; font-size: 12px; }
   .player-filter-actions .player-artist-picker-wrap { width: 100%; max-width: 100%; height: 36px; flex: 0 0 36px; }
