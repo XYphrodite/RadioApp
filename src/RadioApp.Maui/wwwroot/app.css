@@ -2341,17 +2341,33 @@ input[type="range"].dock-slider::-moz-range-thumb {
 }
 
 .player-genre-chip {
-  padding: 3px 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
   font-size: 11px;
   font-weight: 600;
-  border-radius: 12px;
+  border-radius: 14px;
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.04);
-  color: var(--text-2);
+  color: var(--text-1);
   cursor: pointer;
   white-space: nowrap;
   transition: all 0.15s ease;
   flex-shrink: 0;
+}
+
+.player-genre-chip .pgc-icon {
+  font-size: 11px;
+  line-height: 1;
+}
+
+.player-genre-chip .pgc-count {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-2);
+  opacity: 0.78;
+  font-variant-numeric: tabular-nums;
 }
 
 .player-genre-chip:hover {
@@ -2360,10 +2376,34 @@ input[type="range"].dock-slider::-moz-range-thumb {
 }
 
 .player-genre-chip.active {
-  background: rgba(0, 240, 255, 0.12);
+  background: rgba(0, 240, 255, 0.14);
   border-color: var(--neon-cyan);
   color: var(--neon-cyan);
   box-shadow: 0 0 8px rgba(0, 240, 255, 0.25);
+}
+
+.player-genre-chip.active .pgc-count {
+  color: var(--neon-cyan);
+  opacity: 0.92;
+}
+
+.player-genre-chip.empty {
+  opacity: 0.35;
+}
+
+.player-empty-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.player-reset-filters-btn {
+  padding: 6px 14px;
+  font-size: 12px;
+  border-radius: 14px;
+  border-color: var(--neon-cyan);
+  color: var(--neon-cyan);
 }
 
 /* ────────── Player Artist Picker Bar (Under Station Dropdown) ────────── */

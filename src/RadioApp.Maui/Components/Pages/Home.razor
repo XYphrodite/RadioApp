@@ -270,7 +270,7 @@
                         </div>
 
                         <div class="rds-badges">
-                            <span class="rds-tag hi">@(string.IsNullOrWhiteSpace(tr.Genre) ? active.Format : tr.Genre)</span>
+                            <span class="rds-tag hi">@(string.IsNullOrWhiteSpace(tr.Genre) ? active.Format : GenreCatalog.FormatDisplayGenre(tr.Genre))</span>
                             <span class="rds-tag">@tr.CodecBadge</span>
                             <span class="rds-tag">@tr.BpmRounded BPM</span>
                             <span class="rds-tag">ENERGY @tr.EnergyPercent%</span>
@@ -600,14 +600,26 @@ else
                     <button type="button"
                             class="player-genre-chip @(string.IsNullOrEmpty(_playerGenreFilter) ? "active" : "")"
                             @onclick='() => SelectGenreFilter("")'>
-                        Все
+                        <span>Все</span>
+                        @if (_genreBaseCount > 0)
+                        {
+                            <span class="pgc-count">@FormatInt(_genreBaseCount)</span>
+                        }
                     </button>
-                    @foreach (var g in CommonGenres)
+                    @foreach (var g in GenreCatalog.Presets)
                     {
+                        var cnt = _genreCounts.GetValueOrDefault(g.Id);
+                        var isActive = string.Equals(_playerGenreFilter, g.Id, StringComparison.OrdinalIgnoreCase);
                         <button type="button"
-                                class="player-genre-chip @(string.Equals(_playerGenreFilter, g, StringComparison.OrdinalIgnoreCase) ? "active" : "")"
-                                @onclick="() => SelectGenreFilter(g)">
-                            @g
+                                class="player-genre-chip @(isActive ? "active" : "") @(cnt == 0 && !isActive ? "empty" : "")"
+                                @onclick="() => SelectGenreFilter(g.Id)"
+                                title="@g.Label (@FormatInt(cnt) тр.)">
+                            <span class="pgc-icon">@g.Icon</span>
+                            <span>@g.Label</span>
+                            @if (cnt > 0 || isActive)
+                            {
+                                <span class="pgc-count">@FormatInt(cnt)</span>
+                            }
                         </button>
                     }
                 </div>
@@ -694,7 +706,7 @@ else
                             <div class="ptr-meta-right">
                                 @if (!string.IsNullOrWhiteSpace(t.Genre))
                                 {
-                                    <span class="ptr-genre hide-xs">@t.Genre</span>
+                                    <span class="ptr-genre hide-xs">@GenreCatalog.FormatDisplayGenre(t.Genre)</span>
                                 }
                                 <span class="ptr-codec hide-xs">@t.CodecBadge</span>
                                 <span class="ptr-time">@FormatTime(t.EffectiveDurationSec)</span>
@@ -724,7 +736,15 @@ else
                             }
                             else
                             {
-                                <span>@(Engine.IsLoaded ? "Ничего не найдено по вашему запросу" : "Каталог не загружен")</span>
+                                <div class="player-empty-box">
+                                    <span>@(Engine.IsLoaded ? "Ничего не найдено по вашему запросу" : "Каталог не загружен")</span>
+                                    @if (Engine.IsLoaded && (!string.IsNullOrEmpty(_playerGenreFilter) || !string.IsNullOrWhiteSpace(_playerSearch) || !string.IsNullOrEmpty(_playerArtist)))
+                                    {
+                                        <button type="button" class="btn-ctrl player-reset-filters-btn" @onclick="ResetAllPlayerFilters">
+                                            Сбросить фильтры
+                                        </button>
+                                    }
+                                </div>
                             }
                         </div>
                     }
@@ -936,7 +956,7 @@ else
                             }
                             @if (!string.IsNullOrWhiteSpace(ptNow.Genre))
                             {
-                                <span class="np-badge np-badge-genre">@ptNow.Genre</span>
+                                <span class="np-badge np-badge-genre">@GenreCatalog.FormatDisplayGenre(ptNow.Genre)</span>
                             }
                         </div>
                     }
@@ -1252,7 +1272,8 @@ else
     private string _libraryView = "tracks"; // "tracks", "favorites", or "artists"
     private bool _nowPlayingOpen;
     private string _playerGenreFilter = "";
-    private static readonly string[] CommonGenres = { "Rock", "Hip-Hop", "Electronic", "Pop", "Phonk", "Synthwave", "Indie", "Metal" };
+    private int _genreBaseCount;
+    private Dictionary<string, int> _genreCounts = new(StringComparer.OrdinalIgnoreCase);
     private List<PlayerArtistItem> _cachedArtists = new();
 
     private void SelectGenreFilter(string genre)
@@ -1262,6 +1283,18 @@ else
         else
             _playerGenreFilter = genre;
 
+        _playerShown = PlayerPageSize;
+        RebuildPlayerList();
+        RebuildQueueForCurrentFilter(_playerTrack);
+    }
+
+    private void ResetAllPlayerFilters()
+    {
+        _playerGenreFilter = "";
+        _playerSearch = "";
+        _playerArtist = "";
+        Store.Preferences.PlayerArtist = "";
+        Store.Save();
         _playerShown = PlayerPageSize;
         RebuildPlayerList();
         RebuildQueueForCurrentFilter(_playerTrack);
@@ -2293,6 +2326,8 @@ else
         if (!Engine.IsLoaded)
         {
             _filteredTracks = new();
+            _genreBaseCount = 0;
+            _genreCounts = new(StringComparer.OrdinalIgnoreCase);
             return;
         }
 
@@ -2306,13 +2341,23 @@ else
         if (_libraryView == "favorites")
             q = q.Where(t => Store.Preferences.LikedTrackIds.Contains(t.Id));
 
-        if (!string.IsNullOrEmpty(_playerGenreFilter))
-            q = q.Where(t => t.Genre.Contains(_playerGenreFilter, StringComparison.OrdinalIgnoreCase));
-
         if (!string.IsNullOrWhiteSpace(_playerSearch))
             q = q.Where(t => SearchNormalizer.MatchesFuzzy(t, _playerSearch));
 
-        _filteredTracks = ApplySorting(q).ToList();
+        var baseList = q.ToList();
+        _genreBaseCount = baseList.Count;
+        var counts = new Dictionary<string, int>(GenreCatalog.Presets.Count, StringComparer.OrdinalIgnoreCase);
+        foreach (var preset in GenreCatalog.Presets)
+        {
+            counts[preset.Id] = baseList.Count(preset.Matcher);
+        }
+        _genreCounts = counts;
+
+        IEnumerable<RadioTrack> finalQuery = baseList;
+        if (!string.IsNullOrEmpty(_playerGenreFilter))
+            finalQuery = baseList.Where(t => GenreCatalog.MatchesPreset(t, _playerGenreFilter));
+
+        _filteredTracks = ApplySorting(finalQuery).ToList();
     }
 
     private IEnumerable<RadioTrack> ApplySorting(IEnumerable<RadioTrack> q)

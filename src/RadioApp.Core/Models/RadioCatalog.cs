@@ -189,6 +189,37 @@ public static class SearchNormalizer
         return sb.ToString();
     }
 
+    private static readonly Dictionary<string, string[]> RuGenreAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["рок"] = ["rock"],
+        ["рэп"] = ["hip hop", "rap", "gangsta"],
+        ["реп"] = ["hip hop", "rap", "gangsta"],
+        ["хип"] = ["hip hop"],
+        ["хоп"] = ["hip hop"],
+        ["хипхоп"] = ["hip hop", "rap"],
+        ["фонк"] = ["drift fm", "phonk", "memphis", "cloud rap", "horrorcore"],
+        ["синтвейв"] = ["synthwave", "synth pop"],
+        ["ретровейв"] = ["synthwave"],
+        ["электроника"] = ["electronic"],
+        ["джаз"] = ["jazz"],
+        ["блюз"] = ["blues"],
+        ["соул"] = ["soul", "rnb"],
+        ["фанк"] = ["funk"],
+        ["метал"] = ["metal"],
+        ["металл"] = ["metal"],
+        ["панк"] = ["punk"],
+        ["поп"] = ["pop"],
+        ["регги"] = ["reggae", "ragga", "dub"],
+        ["классика"] = ["classical"],
+        ["эмбиент"] = ["ambient"],
+        ["кантри"] = ["country", "folk"],
+        ["техно"] = ["techno"],
+        ["хаус"] = ["house"],
+        ["транс"] = ["trance"],
+        ["даб"] = ["dub"],
+        ["инди"] = ["indie", "alternative rock"],
+    };
+
     public static bool MatchesFuzzy(RadioTrack track, string query)
     {
         if (string.IsNullOrWhiteSpace(query)) return true;
@@ -198,6 +229,8 @@ public static class SearchNormalizer
         var titleNorm = Normalize(track.DisplayTitle);
         var artistNorm = Normalize(track.Artist);
         var albumNorm = Normalize(track.Album);
+        var genreNorm = Normalize(track.Genre);
+        var stationNorm = Normalize(track.Station);
 
         var titleTranslit = TransliterateRuToEn(titleNorm);
         var artistTranslit = TransliterateRuToEn(artistNorm);
@@ -213,9 +246,23 @@ public static class SearchNormalizer
                 titleNorm.Contains(wNorm, StringComparison.OrdinalIgnoreCase) ||
                 artistNorm.Contains(wNorm, StringComparison.OrdinalIgnoreCase) ||
                 albumNorm.Contains(wNorm, StringComparison.OrdinalIgnoreCase) ||
+                genreNorm.Contains(wNorm, StringComparison.OrdinalIgnoreCase) ||
                 titleTranslit.Contains(wTranslit, StringComparison.OrdinalIgnoreCase) ||
                 artistTranslit.Contains(wTranslit, StringComparison.OrdinalIgnoreCase) ||
                 albumTranslit.Contains(wTranslit, StringComparison.OrdinalIgnoreCase);
+
+            if (!matches && RuGenreAliases.TryGetValue(wNorm, out var aliases))
+            {
+                foreach (var alias in aliases)
+                {
+                    if (genreNorm.Contains(alias, StringComparison.OrdinalIgnoreCase) ||
+                        stationNorm.Contains(alias, StringComparison.OrdinalIgnoreCase))
+                    {
+                        matches = true;
+                        break;
+                    }
+                }
+            }
 
             if (!matches) return false;
         }
