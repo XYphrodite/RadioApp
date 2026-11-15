@@ -3261,3 +3261,66 @@ input[type="range"].dock-slider::-moz-range-thumb {
   color: var(--text-0);
   box-shadow: none;
 }
+
+/* ────────── Now Playing: full-height sheet, full-width timeline, landscape layout ────────── */
+input[type="range"].np-slider {
+  display: block;
+  width: 100% !important;
+  flex: none;
+  height: 6px;
+}
+
+.np-timeline-section { width: 100%; }
+
+@media (max-width: 640px) {
+  .now-playing-backdrop { align-items: stretch; }
+  .now-playing-sheet {
+    max-width: none;
+    height: 100vh;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+    border: none;
+    padding: calc(8px + env(safe-area-inset-top, 0px)) 20px max(20px, env(safe-area-inset-bottom, 20px));
+  }
+  .np-drag-bar { display: none; }
+  .np-timeline-section { padding: 0; }
+  .np-vinyl-disc { width: min(80vw, 44dvh); height: min(80vw, 44dvh); }
+  .np-vinyl-label { width: min(38vw, 21dvh); height: min(38vw, 21dvh); }
+}
+
+@media (max-height: 520px) and (orientation: landscape) {
+  .now-playing-backdrop { align-items: stretch; }
+  .now-playing-sheet {
+    max-width: none;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    border: none;
+    border-radius: 0;
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+    grid-template-rows: auto 1fr auto auto auto 1fr;
+    column-gap: 28px;
+    padding: calc(6px + env(safe-area-inset-top, 0px)) calc(24px + env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) calc(24px + env(safe-area-inset-left, 0px));
+  }
+  .np-drag-bar { display: none; }
+  .np-header { grid-column: 1 / -1; grid-row: 1; margin-bottom: 0; }
+  .np-collapse-btn, .np-heart-btn { width: 32px; height: 32px; font-size: 14px; }
+  .np-vinyl-area { grid-column: 1; grid-row: 2 / 7; margin: 0; min-height: 0; }
+  .np-vinyl-disc { width: min(68dvh, 40vw); height: min(68dvh, 40vw); }
+  .np-vinyl-label { width: min(32dvh, 19vw); height: min(32dvh, 19vw); }
+  .np-meta-section { grid-column: 2; grid-row: 3; margin-bottom: 8px; text-align: left; padding: 0; min-width: 0; }
+  .np-title { font-size: 17px; -webkit-line-clamp: 1; }
+  .np-artist-btn { padding-left: 0; }
+  .np-album { margin-bottom: 4px; }
+  .np-badges-row { justify-content: flex-start; }
+  .np-timeline-section { grid-column: 2; grid-row: 4; margin-bottom: 8px; padding: 0; }
+  .np-controls-section { grid-column: 2; grid-row: 5; justify-content: space-between; }
+  .np-ctrl-btn { width: 38px; height: 38px; font-size: 13px; }
+  .np-step-btn { width: 44px; height: 44px; font-size: 16px; }
+  .np-play-btn { width: 54px; height: 54px; font-size: 20px; }
+}
