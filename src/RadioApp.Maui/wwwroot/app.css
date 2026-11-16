@@ -2949,18 +2949,24 @@ input[type="range"].dock-slider::-moz-range-thumb {
 }
 
 .np-collapse-btn {
-  width: 36px;
-  height: 36px;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.07);
-  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-hi);
   color: var(--text-0);
-  font-size: 18px;
+  font-size: 22px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.15s ease;
+}
+
+.np-collapse-btn svg {
+  width: 22px;
+  height: 22px;
+  display: block;
 }
 
 .np-collapse-btn:hover {
@@ -2991,12 +2997,12 @@ input[type="range"].dock-slider::-moz-range-thumb {
 }
 
 .np-heart-btn {
-  width: 36px;
-  height: 36px;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.07);
-  border: 1px solid var(--border);
-  font-size: 16px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-hi);
+  font-size: 18px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -3309,7 +3315,8 @@ input[type="range"].np-slider {
   }
   .np-drag-bar { display: none; }
   .np-header { grid-column: 1 / -1; grid-row: 1; margin-bottom: 0; }
-  .np-collapse-btn, .np-heart-btn { width: 32px; height: 32px; font-size: 14px; }
+  .np-collapse-btn, .np-heart-btn { width: 36px; height: 36px; font-size: 16px; }
+  .np-collapse-btn svg { width: 20px; height: 20px; }
   .np-vinyl-area { grid-column: 1; grid-row: 2 / 7; margin: 0; min-height: 0; }
   .np-vinyl-disc { width: min(68dvh, 40vw); height: min(68dvh, 40vw); }
   .np-vinyl-label { width: min(32dvh, 19vw); height: min(32dvh, 19vw); }

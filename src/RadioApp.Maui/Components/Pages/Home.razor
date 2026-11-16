@@ -874,8 +874,10 @@ else
 
                 <!-- HEADER -->
                 <header class="np-header">
-                    <button type="button" class="np-collapse-btn" @onclick="CloseNowPlaying" title="Свернуть">
-                        <span>▾</span>
+                    <button type="button" class="np-collapse-btn" @onclick="CloseNowPlaying" title="Свернуть" aria-label="Свернуть">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <polyline points="6 9 12 15 18 9" />
+                        </svg>
                     </button>
 
                     <div class="np-header-meta">
