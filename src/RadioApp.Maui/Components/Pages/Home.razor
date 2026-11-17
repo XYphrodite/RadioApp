@@ -509,14 +509,22 @@ else
             <div class="player-filters">
                 <div class="search-input-wrap">
                     <input class="server-input player-search-input"
+                           id="playerUniversalSearch"
+                           @key="@("player-universal-search")"
                            type="text"
+                           inputmode="search"
+                           enterkeyhint="search"
+                           autocomplete="off"
+                           autocorrect="off"
+                           autocapitalize="off"
+                           spellcheck="false"
                            placeholder="@(_libraryView == "artists" ? "🔎 Поиск артиста..." : "🔎 Поиск: артист, трек, альбом")"
-                           value="@(_libraryView == "artists" ? _artistSearchFilter : PlayerSearch)"
-                           @oninput="OnUniversalSearchInput" />
-                    @if (!string.IsNullOrEmpty(_libraryView == "artists" ? _artistSearchFilter : _playerSearch))
-                    {
-                        <button class="search-clear-btn" @onclick="ClearUniversalSearch" title="Очистить поиск">✕</button>
-                    }
+                           @oninput="OnUniversalSearchInput"
+                           @onkeydown="OnUniversalSearchKeyDown" />
+                    <button type="button"
+                            class="search-clear-btn @(string.IsNullOrEmpty(_searchInputRaw) ? "hidden" : "")"
+                            @onclick="ClearUniversalSearch"
+                            title="Очистить поиск">✕</button>
                 </div>
 
                 <div class="player-filter-actions">
@@ -934,7 +942,7 @@ else
                         <div class="np-artist-wrap">
                             <button type="button"
                                     class="np-artist-btn"
-                                    @onclick="() => { FilterByArtistFromTrack(ptNow.Artist); CloseNowPlaying(); }"
+                                    @onclick="async () => { await FilterByArtistFromTrack(ptNow.Artist); CloseNowPlaying(); }"
                                     title="Показать все треки этого исполнителя">
                                 @ptNow.Artist
                             </button>
@@ -1043,16 +1051,24 @@ else
 
                 <div class="artist-picker-search-bar">
                     <span class="search-icon">🔍</span>
-                    <input type="search"
+                    <input type="text"
+                           inputmode="search"
+                           enterkeyhint="search"
+                           autocomplete="off"
+                           autocorrect="off"
+                           autocapitalize="off"
+                           spellcheck="false"
+                           id="artistPickerSearch"
+                           @key="@("artist-picker-search")"
                            class="server-input artist-search-field"
                            placeholder="Быстрый поиск артиста..."
-                           value="@_artistSearchFilter"
                            @oninput="OnArtistSearchInput"
+                           @onkeydown="OnArtistSearchKeyDown"
                            autofocus />
-                    @if (!string.IsNullOrWhiteSpace(_artistSearchFilter))
-                    {
-                        <button type="button" class="search-clear-btn" @onclick="ClearArtistSearch" title="Очистить">✕</button>
-                    }
+                    <button type="button"
+                            class="search-clear-btn @(string.IsNullOrWhiteSpace(_artistPickerInputRaw) ? "hidden" : "")"
+                            @onclick="ClearArtistSearch"
+                            title="Очистить">✕</button>
                 </div>
 
                 <div class="artist-picker-list">
@@ -1271,6 +1287,11 @@ else
     private string _playerArtist = "";
     private bool _artistPickerOpen;
     private string _artistSearchFilter = "";
+    private string _searchInputRaw = "";
+    private string _artistPickerInputRaw = "";
+    private CancellationTokenSource? _searchDebounceCts;
+    private CancellationTokenSource? _artistSearchDebounceCts;
+    private DateTime _lastSearchTypingUtc = DateTime.MinValue;
     private string _libraryView = "tracks"; // "tracks", "favorites", or "artists"
     private bool _nowPlayingOpen;
     private string _playerGenreFilter = "";
@@ -1290,16 +1311,19 @@ else
         RebuildQueueForCurrentFilter(_playerTrack);
     }
 
-    private void ResetAllPlayerFilters()
+    private async Task ResetAllPlayerFilters()
     {
+        CancelSearchDebounce();
         _playerGenreFilter = "";
         _playerSearch = "";
+        _searchInputRaw = _libraryView == "artists" ? _artistSearchFilter : "";
         _playerArtist = "";
         Store.Preferences.PlayerArtist = "";
         Store.Save();
         _playerShown = PlayerPageSize;
         RebuildPlayerList();
         RebuildQueueForCurrentFilter(_playerTrack);
+        await SetInputValueAsync("playerUniversalSearch", _searchInputRaw);
     }
 
     private RadioTrack? GetNextPlayerTrack()
@@ -1421,32 +1445,41 @@ else
 
     private void OpenArtistPicker()
     {
+        CancelArtistSearchDebounce();
         _artistSearchFilter = "";
+        _artistPickerInputRaw = "";
         _artistPickerOpen = true;
     }
 
     private void CloseArtistPicker()
     {
+        CancelArtistSearchDebounce();
         _artistPickerOpen = false;
         _artistSearchFilter = "";
+        _artistPickerInputRaw = "";
     }
 
-    private void SelectArtist(string? artist)
+    private async Task SelectArtist(string? artist)
     {
+        CancelSearchDebounce();
+        CancelArtistSearchDebounce();
         _playerArtist = artist?.Trim() ?? "";
         Store.Preferences.PlayerArtist = _playerArtist;
         Store.Save();
         _artistPickerOpen = false;
         _artistSearchFilter = "";
+        _artistPickerInputRaw = "";
         _playerShown = PlayerPageSize;
         _libraryView = "tracks";
+        _searchInputRaw = _playerSearch;
         RebuildPlayerList();
         RebuildQueueForCurrentFilter();
+        await SetInputValueAsync("playerUniversalSearch", _playerSearch);
     }
 
     private async Task PlayArtistImmediatelyAsync(string? artist)
     {
-        SelectArtist(artist);
+        await SelectArtist(artist);
         if (_playerQueue.Count > 0)
         {
             await PlayTrackAsync(_playerQueue[0], rebuildQueue: false);
@@ -1463,37 +1496,127 @@ else
         RebuildQueueForCurrentFilter(_playerTrack);
     }
 
-    private void FilterByArtistFromTrack(string? artist)
+    private async Task FilterByArtistFromTrack(string? artist)
     {
         if (!string.IsNullOrWhiteSpace(artist))
         {
-            SelectArtist(artist);
+            await SelectArtist(artist);
         }
+    }
+
+    private async Task SetInputValueAsync(string id, string value)
+    {
+        if (!_jsInitialized) return;
+        try { await JS.InvokeVoidAsync("radioAudio.setInputValue", id, value ?? ""); } catch { }
+    }
+
+    private void CancelSearchDebounce()
+    {
+        _searchDebounceCts?.Cancel();
+        _searchDebounceCts?.Dispose();
+        _searchDebounceCts = null;
+    }
+
+    private void CancelArtistSearchDebounce()
+    {
+        _artistSearchDebounceCts?.Cancel();
+        _artistSearchDebounceCts?.Dispose();
+        _artistSearchDebounceCts = null;
     }
 
     private void OnArtistSearchInput(ChangeEventArgs e)
     {
-        _artistSearchFilter = e.Value?.ToString() ?? "";
+        var val = e.Value?.ToString() ?? "";
+        _lastSearchTypingUtc = DateTime.UtcNow;
+        _artistPickerInputRaw = val;
+        CancelArtistSearchDebounce();
+
+        if (string.IsNullOrEmpty(val))
+        {
+            _artistSearchFilter = "";
+            return;
+        }
+
+        var cts = new CancellationTokenSource();
+        _artistSearchDebounceCts = cts;
+        _ = DebounceArtistPickerSearchAsync(val, cts.Token);
     }
 
-    private void ClearArtistSearch()
+    private async Task DebounceArtistPickerSearchAsync(string query, CancellationToken ct)
     {
+        try
+        {
+            await Task.Delay(110, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (ct.IsCancellationRequested) return;
+        await InvokeAsync(() =>
+        {
+            if (ct.IsCancellationRequested) return;
+            _artistSearchFilter = query;
+            StateHasChanged();
+        });
+    }
+
+    private async Task OnArtistSearchKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            CancelArtistSearchDebounce();
+            _artistSearchFilter = _artistPickerInputRaw;
+            if (_jsInitialized)
+            {
+                try { await JS.InvokeVoidAsync("radioAudio.blurElement", "artistPickerSearch"); } catch { }
+            }
+        }
+    }
+
+    private async Task ClearArtistSearch()
+    {
+        CancelArtistSearchDebounce();
+        _artistPickerInputRaw = "";
         _artistSearchFilter = "";
+        await SetInputValueAsync("artistPickerSearch", "");
     }
 
-    private void SetLibraryView(string view)
+    private async Task SetLibraryView(string view)
     {
+        if (_libraryView == view) return;
+        CancelSearchDebounce();
         _libraryView = view;
+        _searchInputRaw = _libraryView == "artists" ? _artistSearchFilter : _playerSearch;
         if (_libraryView == "tracks" || _libraryView == "favorites")
         {
             _playerShown = PlayerPageSize;
             RebuildPlayerList();
         }
+        await SetInputValueAsync("playerUniversalSearch", _searchInputRaw);
     }
 
     private void OnUniversalSearchInput(ChangeEventArgs e)
     {
         var val = e.Value?.ToString() ?? "";
+        _lastSearchTypingUtc = DateTime.UtcNow;
+        _searchInputRaw = val;
+        CancelSearchDebounce();
+
+        if (string.IsNullOrEmpty(val))
+        {
+            ApplyUniversalSearch(val);
+            return;
+        }
+
+        var cts = new CancellationTokenSource();
+        _searchDebounceCts = cts;
+        _ = DebounceUniversalSearchAsync(val, cts.Token);
+    }
+
+    private void ApplyUniversalSearch(string val)
+    {
         if (_libraryView == "artists")
         {
             _artistSearchFilter = val;
@@ -1504,8 +1627,43 @@ else
         }
     }
 
-    private void ClearUniversalSearch()
+    private async Task DebounceUniversalSearchAsync(string query, CancellationToken ct)
     {
+        try
+        {
+            await Task.Delay(140, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (ct.IsCancellationRequested) return;
+        await InvokeAsync(() =>
+        {
+            if (ct.IsCancellationRequested) return;
+            ApplyUniversalSearch(query);
+            StateHasChanged();
+        });
+    }
+
+    private async Task OnUniversalSearchKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            CancelSearchDebounce();
+            ApplyUniversalSearch(_searchInputRaw);
+            if (_jsInitialized)
+            {
+                try { await JS.InvokeVoidAsync("radioAudio.blurElement", "playerUniversalSearch"); } catch { }
+            }
+        }
+    }
+
+    private async Task ClearUniversalSearch()
+    {
+        CancelSearchDebounce();
+        _searchInputRaw = "";
         if (_libraryView == "artists")
         {
             _artistSearchFilter = "";
@@ -1514,6 +1672,7 @@ else
         {
             ClearPlayerSearch();
         }
+        await SetInputValueAsync("playerUniversalSearch", "");
     }
 
     private void ToggleSort(string key)
@@ -1733,7 +1892,10 @@ else
                     if (IsPlayerMode)
                     {
                         await PlayerTickAsync();
-                        StateHasChanged();
+                        if ((DateTime.UtcNow - _lastSearchTypingUtc).TotalMilliseconds >= 450)
+                        {
+                            StateHasChanged();
+                        }
                         return;
                     }
 
@@ -2296,6 +2458,7 @@ else
 
         if (IsPlayerMode)
         {
+            _searchInputRaw = _libraryView == "artists" ? _artistSearchFilter : _playerSearch;
             RebuildPlayerList();
             RestorePlayerTrack();
             RebuildQueueForCurrentFilter(_playerTrack);
@@ -2310,6 +2473,11 @@ else
         Store.Save();
         RefreshSnapshots();
         await SyncAudioAsync(staticBurstSec: 0, forceSync: true);
+        if (IsPlayerMode && !string.IsNullOrEmpty(_searchInputRaw))
+        {
+            StateHasChanged();
+            await SetInputValueAsync("playerUniversalSearch", _searchInputRaw);
+        }
     }
 
     private void OnCatalogChangedForPlayer()
@@ -2774,6 +2942,8 @@ else
         MediaBridge.StepStationRequested -= OnNativeStepStationRequested;
         _coverDelayCts?.Cancel();
         _coverDelayCts?.Dispose();
+        CancelSearchDebounce();
+        CancelArtistSearchDebounce();
         _tickCts?.Cancel();
         _tickCts?.Dispose();
         _dotNetRef?.Dispose();

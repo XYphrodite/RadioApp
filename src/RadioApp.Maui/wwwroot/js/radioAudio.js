@@ -727,6 +727,22 @@ window.radioAudio = (() => {
     }
   }
 
+  function setInputValue(id, value) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const next = value ?? "";
+    if (el.value !== next) {
+      el.value = next;
+    }
+  }
+
+  function blurElement(id) {
+    const el = document.getElementById(id);
+    if (el && typeof el.blur === "function") {
+      el.blur();
+    }
+  }
+
   return {
     init,
     syncBroadcast,
@@ -734,6 +750,8 @@ window.radioAudio = (() => {
     getPosition,
     seekTo,
     setVolumeOnly,
-    playStaticBurst
+    playStaticBurst,
+    setInputValue,
+    blurElement
   };
 })();

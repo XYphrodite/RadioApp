@@ -1778,6 +1778,10 @@ input[type="range"].vol-slider::-webkit-slider-thumb {
   justify-content: center;
 }
 
+.search-clear-btn.hidden {
+  display: none;
+}
+
 .player-select {
   flex: 0 0 240px;
   max-width: 45%;
