@@ -21,12 +21,12 @@
             </span>
         </div>
 
-        <div class="topbar-right">
-            <div class="sort-tabs mode-switch" @onclick:stopPropagation="true" title="Режим работы приложения">
-                <button class="sort-tab @(!IsPlayerMode ? "active" : "")" @onclick='() => SetAppModeAsync("radio")'>📻 Радио</button>
-                <button class="sort-tab @(IsPlayerMode ? "active" : "")" @onclick='() => SetAppModeAsync("player")'>🎵 Плеер</button>
-            </div>
+        <div class="sort-tabs mode-switch" @onclick:stopPropagation="true" title="Режим работы приложения">
+            <button class="sort-tab @(!IsPlayerMode ? "active" : "")" @onclick='() => SetAppModeAsync("radio")'>📻 Радио</button>
+            <button class="sort-tab @(IsPlayerMode ? "active" : "")" @onclick='() => SetAppModeAsync("player")'>🎵 Плеер</button>
+        </div>
 
+        <div class="topbar-right">
             @if (Engine.IsLoaded)
             {
                 <span class="stat-pill hide-mobile">

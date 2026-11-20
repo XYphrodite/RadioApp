@@ -763,7 +763,7 @@
     max-height: 100dvh;
     min-height: 0;
     overflow: hidden;
-    grid-template-rows: auto 1fr;
+    grid-template-rows: 54px 1fr;
     padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
   }
   .workspace { grid-template-columns: 1fr; }
@@ -787,7 +787,13 @@
     gap: 10px;
   }
 
+  .app-shell.player-mode {
+    grid-template-rows: 48px 1fr;
+  }
+
   .topbar {
+    height: 48px;
+    min-height: 48px;
     padding: 0 12px;
     border-radius: 12px;
   }
@@ -2312,13 +2318,14 @@ input[type="range"].dock-slider::-moz-range-thumb {
 
 /* Keep the top bar inside the viewport on phones (mode switch made it wider) */
 .app-shell { grid-template-columns: minmax(0, 1fr); }
-.topbar { min-width: 0; }
+.topbar { min-width: 0; gap: 10px; }
+.topbar .mode-switch { margin-left: auto; margin-right: 0; flex-shrink: 0; }
 .topbar-right { min-width: 0; flex-shrink: 0; }
 @media (max-width: 640px) {
   .brand-title, .brand-sub { display: none; }
   .brand { flex: 0 0 auto; }
-  .topbar { justify-content: space-between; gap: 6px; }
-  .mode-switch { margin-right: 0; }
+  .topbar { justify-content: flex-start; gap: 8px; }
+  .topbar .mode-switch { margin-left: 0; margin-right: auto; }
 }
 
 /* ────────── Like / Favorites Button in Track Row ────────── */
