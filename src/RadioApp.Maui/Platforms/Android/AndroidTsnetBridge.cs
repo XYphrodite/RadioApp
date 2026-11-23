@@ -455,7 +455,7 @@ public sealed class AndroidTsnetBridge : ITailscaleBridge, IDisposable
             return (uri.Host, port);
         }
 
-        return ("mks68i7rtx", 5480);
+        return ("desktop-ib88isg", 5480);
     }
 
     private static string GetStateDir(string folderName)

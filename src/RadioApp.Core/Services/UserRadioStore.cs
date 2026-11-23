@@ -71,7 +71,13 @@ public sealed class UserRadioPreferences
 
 public sealed class UserRadioStore
 {
-    public const string DefaultServerBaseUrl = "http://mks68i7rtx:5480";
+    public const string DefaultServerBaseUrl = "http://desktop-ib88isg:5480";
+
+    private static readonly string[] LegacyServerBaseUrls =
+    {
+        "http://mks68i7rtx:5480",
+        "http://100.105.87.52:5480"
+    };
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
@@ -124,6 +130,9 @@ public sealed class UserRadioStore
                 if (loaded is not null)
                 {
                     loaded.ServerBaseUrl = NormalizeServerUrl(loaded.ServerBaseUrl);
+                    // Migrate users still pointing at the retired mks68i7rtx server to the Xeon server.
+                    if (LegacyServerBaseUrls.Contains(loaded.ServerBaseUrl, StringComparer.OrdinalIgnoreCase))
+                        loaded.ServerBaseUrl = DefaultServerBaseUrl;
                     loaded.Volume = Math.Clamp(loaded.Volume, 0.0, 1.0);
                     loaded.StationSkipOffsetsSec = new Dictionary<string, double>(
                         loaded.StationSkipOffsetsSec ?? new(),

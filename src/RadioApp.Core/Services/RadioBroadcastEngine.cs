@@ -232,7 +232,7 @@ public sealed class RadioBroadcastEngine
         if (string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase))
             return false;
 
-        // Resolve single-label LAN/MagicDNS names (e.g. mks68i7rtx) and local/Tailscale suffixes to IPv4
+        // Resolve single-label LAN/MagicDNS names (e.g. desktop-ib88isg) and local/Tailscale suffixes to IPv4
         // so Android WebView <audio> & <img> skip slow mDNS/DoT/IPv6 hostname lookups.
         bool isLocalOrTailnet = !host.Contains('.') ||
                                 host.EndsWith(".ts.net", StringComparison.OrdinalIgnoreCase) ||
